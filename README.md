@@ -1,9 +1,16 @@
 # TSV
 
+This project is an extension based on the ICML 2025 paper: [Steer LLM Latents for Hallucination Detection](https://arxiv.org/abs/2503.01917) by Seongheon Park, Xuefeng Du, Min-Hsuan Yeh, Haobo Wang, and Yixuan Li
 
-Source code for ICML 2025 paper [Steer LLM Latents for Hallucination Detection](https://arxiv.org/abs/2503.01917) by Seongheon Park, Xuefeng Du, Min-Hsuan Yeh, Haobo Wang, and Yixuan Li
+The majority of the code were adapted from the source code of the paper mentioned above. See the source code here: (https://github.com/deeplearning-wisc/tsv.git)
 
 ---
+
+# Our innovation
+The curren project is an extension of the TSV paper. As the TSV showed outstanding performance on detecting hallucinated answers from LLMs, we propose that the TSV can be used to guide hallucination mitigation. 
+
+Besides, we modify the classification objective function to make make the two distributions (truthful and hallucinated) to be as far as possible so that it can handle edge cases better. 
+
 
 ## Requirements
 
@@ -43,20 +50,6 @@ bash train.sh
 
 ---
 
-## Citation
-
-```
-@inproceedings{
-park2025steer,
-title={Steer {LLM} Latents for Hallucination Detection},
-author={Seongheon Park and Xuefeng Du and Min-Hsuan Yeh and Haobo Wang and Yixuan Li},
-booktitle={Forty-second International Conference on Machine Learning},
-year={2025}
-}
-```
-
----
-
 ## Acknowledgement
 
-We gratefully acknowledge [HaloScope](https://arxiv.org/abs/2409.17504), [ITI](https://arxiv.org/abs/2306.03341), and [ICV](https://arxiv.org/abs/2311.06668) for their inspiring ideas and open-source contributions, which served as valuable foundations for this work.
+We gratefully acknowledge [TSV](https://arxiv.org/abs/2503.01917), [ITI](https://arxiv.org/abs/2306.03341), and [ICV](https://arxiv.org/abs/2311.06668) for their inspiring ideas and open-source contributions, which served as valuable foundations for this work.
