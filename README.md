@@ -8,7 +8,7 @@ The majority of the code were adapted from the TSV source code of the paper ment
 ---
 
 # Our innovation
-The curren project is an extension of the TSV paper. As the TSV showed outstanding performance on detecting hallucinated answers from LLMs, we propose that the TSV can be used to guide hallucination mitigation. 
+The current project is an extension of the TSV paper. As the TSV showed outstanding performance on detecting hallucinated answers from LLMs, we propose that the TSV can be used to guide where (which llm layer) to add the treatment, and whom (hallucinated responses) to achieve better hallucination mitigation outcomes. 
 
 Besides, we modify the classification objective function to make make the two distributions (truthful and hallucinated) to be as far as possible so that it can handle edge cases better. 
 
