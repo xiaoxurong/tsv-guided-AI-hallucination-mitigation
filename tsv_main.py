@@ -7,7 +7,8 @@ import numpy as np
 import argparse
 from train_utils import get_last_non_padded_token_rep, compute_ot_loss_cos, update_centroids_ema, update_centroids_ema_hard, get_ex_data, collate_fn
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from llm_layers import add_tsv_layers
+from llm_layers import LlamaDecoderLayerWrapper, add_tsv_layers
+from llm_layers import get_layers
 from sklearn.metrics import roc_auc_score
 from torch.cuda.amp import autocast, GradScaler
 import torch.nn.functional as F
@@ -217,7 +218,6 @@ def train_model(model, optimizer, device, prompts, labels, args):
 
                 # Use attention mask to ignore padding tokens, and get the last non-padded token's representation
                 last_token_rep = get_last_non_padded_token_rep(last_layer_hidden_state, attention_mask.squeeze())  # Shape: [batch_size, hidden_size]
-
                 
                 ot_loss, similarities = compute_ot_loss_cos(last_token_rep, centroids, batch_labels, batch_size, args)
                 
@@ -263,6 +263,43 @@ def train_model(model, optimizer, device, prompts, labels, args):
             f"Train Loss: {epoch_loss:.4f}, ")
            
             logging.info(f"Best test AUROC: {best_test_auroc:.4f}, at epoch: {best_test_epoch}")
+        
+        # ===============================
+        # SAVE TRAINED CENTROIDS + TSV
+        # ===============================
+        save_dir = os.path.join(dir_name, "saved_vectors")
+        os.makedirs(save_dir, exist_ok=True)
+
+        # ---- Save centroids (2 x hidden_dim) ----
+        centroids_cpu = centroids.detach().cpu().float()
+        np.save(os.path.join(save_dir, "centroid_hallu.npy"), centroids_cpu[0].numpy())
+        np.save(os.path.join(save_dir, "centroid_true.npy"),  centroids_cpu[1].numpy())
+        print(f"[Saved] Centroids saved to {save_dir}")
+
+        # ---- Save TSV (only the trained layer: args.str_layer) ----
+        # The model only trains tsv[str_layer], others stay zero
+        trained_tsv = None
+        # find TSV inside model by searching wrapped layer
+        if hasattr(model, "model"):  # LlamaForCausalLM model wrapping
+            layers = get_layers(model)
+            layer = layers[args.str_layer]
+            # For res-connection, TSV is inside LlamaDecoderLayerWrapper
+            if isinstance(layer, LlamaDecoderLayerWrapper):
+                trained_tsv = layer.tsv_layer.tsv
+            else:
+                # for mlp/attn component
+                try:
+                    trained_tsv = layer.mlp[-1].tsv  # if component='mlp'
+                except:
+                    trained_tsv = layer.self_attn[-1].tsv  # if component='attn'
+
+        if trained_tsv is not None:
+            tsv_vector = trained_tsv.detach().cpu().float().numpy()
+            np.save(os.path.join(save_dir,
+                f"tsv_layer_{args.str_layer}.npy"), tsv_vector)
+            print(f"[Saved] TSV vector for layer {args.str_layer} saved to {save_dir}")
+        else:
+            print("[Warning] TSV not found in model. Nothing saved.")
             
         return best_test_auroc
 
