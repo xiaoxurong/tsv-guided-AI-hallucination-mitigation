@@ -1,0 +1,65 @@
+import torch
+
+class TSVMitigator:
+    def __init__(self, model, layer_id, tsv_data, device='cuda'):
+        self.model = model
+        self.layer_id = layer_id
+        self.device = device
+        self.hook_handle = None
+        
+        # --- LOADING THE VECTORS (Your friend's variables) ---
+        # We use 'self.' to store them so they persist inside the class
+        self.mu_T = tsv_data['mu_T'].to(device)   
+        self.mu_H = tsv_data['mu_H'].to(device)
+        self.tsv_vec = tsv_data['direction'].to(device) # This corresponds to 'tsv'
+        self.classifier = tsv_data.get('classifier', None)
+
+    def _get_confidence_score(self, h_l):
+        """Calculates 'confidence_score' dynamically for adaptive mitigation."""
+        if self.classifier is None:
+            return 1.0 
+        with torch.no_grad():
+            return torch.sigmoid(self.classifier(h_l))
+
+    def mitigation_hook(self, alpha=0.1, beta=0.2, mode='projection'):
+        def hook(module, input, output):
+            # This is the dynamic 'h_l' from your friend's code
+            h_l = output[0] 
+            
+            # Ensure types match
+            dtype = h_l.dtype
+            mu_T = self.mu_T.to(dtype)
+            mu_H = self.mu_H.to(dtype)
+            tsv = self.tsv_vec.to(dtype)
+            
+            # --- YOUR FRIEND'S MATH LOGIC GOES HERE ---
+            
+            if mode == 'interpolation':
+                # Friend's Method 1: Prototype Interpolation [cite: 35-36]
+                adjusted_representation = (1 - beta) * h_l + beta * mu_T
+                
+            elif mode == 'adaptive':
+                # Friend's Method 2: Adaptive Mitigation [cite: 38-39]
+                confidence_score = self._get_confidence_score(h_l).to(dtype)
+                adjusted_representation = h_l + confidence_score * alpha * tsv
+                
+            elif mode == 'projection':
+                # Friend's Method 3: Prototype-Aware Projection [cite: 40-41]
+                adjusted_representation = h_l + alpha * (mu_T - mu_H)
+                
+            else:
+                adjusted_representation = h_l
+
+            return (adjusted_representation,) + output[1:]
+            
+        return hook
+
+    def attach(self, alpha=0.5, beta=0.2, mode='projection'):
+        layer = self.model.model.layers[self.layer_id]
+        self.hook_handle = layer.register_forward_hook(
+            self.mitigation_hook(alpha, beta, mode)
+        )
+
+    def detach(self):
+        if self.hook_handle:
+            self.hook_handle.remove()
