@@ -1,8 +1,9 @@
-# TSV
+# TSV Guided Hallucination Detection with ITI Approach
 
-This project is an extension based on the ICML 2025 paper: [Steer LLM Latents for Hallucination Detection](https://arxiv.org/abs/2503.01917) by Seongheon Park, Xuefeng Du, Min-Hsuan Yeh, Haobo Wang, and Yixuan Li
+This project is an extension based on 1) the ICML 2025 paper: [Steer LLM Latents for Hallucination Detection](https://arxiv.org/abs/2503.01917) by Seongheon Park, Xuefeng Du, Min-Hsuan Yeh, Haobo Wang, and Yixuan Li, and 2) the NeurIPS 2023 paper: [Inference-Time Intervention:
+Eliciting Truthful Answers from a Language Model] (https://arxiv.org/abs/2306.03341) by Kenneth Li, Oam Patel, Fernanda Viégas, Hanspeter Pfister and Martin Wattenberg.
 
-The majority of the code were adapted from the source code of the paper mentioned above. See the source code here: (https://github.com/deeplearning-wisc/tsv.git)
+The majority of the code were adapted from the TSV source code of the paper mentioned above. See the source code here: (https://github.com/deeplearning-wisc/tsv.git)
 
 ---
 
