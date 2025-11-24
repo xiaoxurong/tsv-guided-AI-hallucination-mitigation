@@ -421,7 +421,7 @@ def main():
 
     if args.gene:
 
-        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, token = '')
+        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
         tokenizer.pad_token = tokenizer.eos_token
         model = AutoModelForCausalLM.from_pretrained(model_name_or_path, low_cpu_mem_usage=True, torch_dtype=torch.float16, device_map="auto", token = '')
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
