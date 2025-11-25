@@ -34,7 +34,7 @@ def train_model(model, optimizer, device, prompts, labels, args):
     model.to(device)
     
     layer_number = -1
-    dir_name = f"/home/xrong8/TSV/TSV_{args.model_name}_{args.dataset_name}/exemplar_num_{args.num_exemplars}_num_selected_data_{args.num_selected_data}/{args.component}/{args.str_layer}/{args.lam}"
+    dir_name = f"TSV_{args.model_name}_{args.dataset_name}/exemplar_num_{args.num_exemplars}_num_selected_data_{args.num_selected_data}/{args.component}/{args.str_layer}/{args.lam}"
     log_dir = f"{dir_name}/"
     log_file = os.path.join(log_dir, f"log.txt")
     os.makedirs(dir_name,exist_ok=True)
@@ -608,10 +608,10 @@ def main():
         
         if args.most_likely:
             # np.save(f'./ml_{args.dataset_name}_bleurt_score.npy', gts)
-            np.save(f'/home/xrong8/TSV/ml_{args.dataset_name}_bleurt_score.npy', gts)
+            np.save(f'ml_{args.dataset_name}_bleurt_score.npy', gts)
             
         else:
-            np.save(f'/home/xrong8/TSV/bg_{args.dataset_name}_bleurt_score.npy', gts)
+            np.save(f'bg_{args.dataset_name}_bleurt_score.npy', gts)
     
 
                 
@@ -643,7 +643,7 @@ def main():
                 categories.append(dataset[i]['category'])
             
             answers = np.load(
-                f'/home/xrong8/TSV/save_for_eval/{args.dataset_name}_hal_det/answers/most_likely_hal_det_{args.model_name}_{args.dataset_name}_answers_index_{i}.npy')
+                f'save_for_eval/{args.dataset_name}_hal_det/answers/most_likely_hal_det_{args.model_name}_{args.dataset_name}_answers_index_{i}.npy')
             
      
             for anw in answers:
@@ -674,9 +674,9 @@ def main():
         
         # wild_q_indices = index[:int(args.wild_ratio * length)]
         
-        index = np.load(f'/home/xrong8/TSV/data_indices/data_index_{args.dataset_name}.npy')
+        index = np.load(f'data_indices/data_index_{args.dataset_name}.npy')
         
-        exemplar_index = np.load(f'/home/xrong8/TSV/data_indices/exemplar_idx_{args.dataset_name}.npy')
+        exemplar_index = np.load(f'data_indices/exemplar_idx_{args.dataset_name}.npy')
         
         wild_q_indices = index[:int(args.wild_ratio * length)]
     
