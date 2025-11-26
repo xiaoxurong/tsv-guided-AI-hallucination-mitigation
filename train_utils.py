@@ -144,40 +144,46 @@ def compute_entropy(last_token_rep, centroids, pseudo_label, k, cls_dist, args):
 
 def update_centroids_ema(centroids, last_token_rep, pseudo_label, args):
 
-    last_token_rep_norm = F.normalize(last_token_rep, p=2, dim=1)
-    
-    centroids= F.normalize(centroids, p=2, dim=1)
-    
-    weighted_sum = torch.matmul(pseudo_label.T, last_token_rep_norm)  
-    
-    # Normalize the weighted sums to get the new centroids
-    pseudo_label_sum = pseudo_label.sum(dim=0).unsqueeze(1) + 1e-8  
-    new_centroids_batch = weighted_sum / pseudo_label_sum  
-    
-    # EMA update for centroids
-    updated_centroids = F.normalize(args.ema_decay * centroids + (1 - args.ema_decay) * new_centroids_batch, p=2, dim=1)
-    
+    # Ensure consistent dtype (float32)
+    last_token_rep_norm = F.normalize(last_token_rep.float(), p=2, dim=1)
+    pseudo_label = pseudo_label.float()
+
+    centroids = F.normalize(centroids.float(), p=2, dim=1)
+
+    # Weighted sum
+    weighted_sum = torch.matmul(pseudo_label.T, last_token_rep_norm)
+
+    # Normalize the weighted sums to get new centroids
+    pseudo_label_sum = pseudo_label.sum(dim=0).unsqueeze(1) + 1e-8
+    new_centroids_batch = weighted_sum / pseudo_label_sum
+
+    # EMA update
+    updated_centroids = args.ema_decay * centroids + (1 - args.ema_decay) * new_centroids_batch
+    updated_centroids = F.normalize(updated_centroids, p=2, dim=1)
+
     return updated_centroids
 
 def update_centroids_ema_hard(centroids, last_token_rep, pseudo_label, args):
-    
-    last_token_rep_norm = F.normalize(last_token_rep, p=2, dim=1)
-    
-    centroids = F.normalize(centroids, p=2, dim=1)
-    
+
+    # Ensure consistent dtype (float32)
+    last_token_rep_norm = F.normalize(last_token_rep.float(), p=2, dim=1)
+    pseudo_label = pseudo_label.float()
+    centroids = F.normalize(centroids.float(), p=2, dim=1)
+
+    # Convert soft pseudo labels to discrete one-hot
     max_indices = torch.argmax(pseudo_label, dim=1)
-    
     discrete_labels = torch.zeros_like(pseudo_label)
-    
     discrete_labels[torch.arange(pseudo_label.size(0)), max_indices] = 1
-    
-    weighted_sum = torch.matmul(discrete_labels.T.float(), last_token_rep_norm)  
-    
-    pseudo_label_sum = discrete_labels.sum(dim=0).unsqueeze(1) + 1e-8  
-    
-    new_centroids_batch = weighted_sum / pseudo_label_sum  
-    
-    # EMA update for centroids
-    updated_centroids = F.normalize(args.ema_decay * centroids + (1 - args.ema_decay) * new_centroids_batch, p=2, dim=-1)
-    
+
+    # Weighted sum
+    weighted_sum = torch.matmul(discrete_labels.T, last_token_rep_norm)
+
+    # Normalize
+    pseudo_label_sum = discrete_labels.sum(dim=0).unsqueeze(1) + 1e-8
+    new_centroids_batch = weighted_sum / pseudo_label_sum
+
+    # EMA update
+    updated_centroids = args.ema_decay * centroids + (1 - args.ema_decay) * new_centroids_batch
+    updated_centroids = F.normalize(updated_centroids, p=2, dim=1)
+
     return updated_centroids
