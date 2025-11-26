@@ -46,19 +46,28 @@ class LlamaDecoderLayerWrapper(nn.Module):
                 **kwargs,
             )
             
-        else:    
-            hidden_states, self_attn_weights, present_key_value = self.llama_decoder_layer.self_attn(
-                    hidden_states=hidden_states,
-                    attention_mask=attention_mask,
-                    position_ids=position_ids,
-                    past_key_value=past_key_value,
-                    output_attentions=output_attentions,
-                    use_cache=use_cache,
-                    cache_position=cache_position,
-                    position_embeddings=position_embeddings,
-                    **kwargs,
-                )
-        
+        else:
+            attn_out = self.llama_decoder_layer.self_attn(
+                hidden_states=hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_value=past_key_value,
+                output_attentions=output_attentions,
+                use_cache=use_cache,
+                cache_position=cache_position,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
+
+            # Unpack depending on number of returned values (2 for Llama-3, 3 for older Llama)
+            if len(attn_out) == 3:
+                hidden_states, self_attn_weights, present_key_value = attn_out
+            elif len(attn_out) == 2:
+                hidden_states, present_key_value = attn_out
+                self_attn_weights = None
+            else:
+                raise ValueError(f"Unexpected number of outputs from self_attn: got {len(attn_out)}")
+                
         # Add residual + steering vector after self-attention
         hidden_states = residual.to(hidden_states.device) + hidden_states
         
