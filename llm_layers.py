@@ -84,13 +84,24 @@ class LlamaDecoderLayerWrapper(nn.Module):
         hidden_states = self.tsv_layer(hidden_states)  # Add steering vector
 
         # Return the outputs
-        outputs = (hidden_states,)
-        if output_attentions:
-            outputs += (self_attn_weights,)
-        if use_cache:
-            outputs += (present_key_value,)
+        if not output_attentions and not use_cache:
+            # Llama expects ONLY hidden_states (tensor)
+            return hidden_states
 
-        return outputs
+        # If attention weights AND cache are requested:
+        if output_attentions and use_cache:
+            return hidden_states, self_attn_weights, present_key_value
+
+        # If only attention weights are requested:
+        if output_attentions:
+            return hidden_states, self_attn_weights
+
+        # If only cache is requested:
+        if use_cache:
+            return hidden_states, present_key_value
+
+        # Fallback (should not happen)
+        return hidden_states
         
 class TSVLayer(nn.Module):
 
