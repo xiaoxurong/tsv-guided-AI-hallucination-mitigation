@@ -42,41 +42,102 @@ def get_last_non_padded_token_rep(hidden_states, attention_mask):
     return last_token_reps
 
 
+# def get_ex_data(model, prompts, labels, batch_size, centroids, sinkhorn, num_selected_data, cls_dist, args):
+    
+#     all_embeddings = []
+#     all_labels = []
+#     num_samples = len(prompts)
+
+#     with torch.no_grad():
+#         with autocast(dtype=torch.float16):
+#             for batch_start in tqdm(range(0, num_samples, batch_size)):
+#                     batch_prompts = prompts[batch_start: batch_start + batch_size]
+#                     batch_labels = labels[batch_start: batch_start + batch_size]
+#                     batch_prompts, batch_labels = collate_fn(batch_prompts,batch_labels)
+#                     attention_mask = (batch_prompts != 0).half()
+#                     batch_prompts = batch_prompts.cuda()
+#                     batch_labels = batch_labels.cuda()
+#                     attention_mask = attention_mask.to(batch_prompts.device)
+#                     all_labels.append(batch_labels.cpu().numpy())
+
+#                     output = model(batch_prompts.squeeze(), attention_mask=attention_mask.squeeze(),  output_hidden_states=False)
+#                     hidden_states = output.hidden_states
+
+#                     hidden_states = torch.stack(hidden_states, dim=0).squeeze()
+#                     last_layer_hidden_state = hidden_states[-1]  
+
+#                     last_token_rep = get_last_non_padded_token_rep(last_layer_hidden_state, attention_mask.squeeze())  
+#                     all_embeddings.append(last_token_rep)
+
+#             all_embeddings = F.normalize(torch.concat(all_embeddings),p=2,dim=-1)
+   
+#             pseudo_label = sinkhorn(all_embeddings, centroids)
+            
+#             selected_indices = compute_entropy(all_embeddings, centroids, pseudo_label, num_selected_data, cls_dist, args)
+            
+#             selected_labels_soft = pseudo_label[selected_indices]
+      
+
+#     return selected_indices, selected_labels_soft
+
 def get_ex_data(model, prompts, labels, batch_size, centroids, sinkhorn, num_selected_data, cls_dist, args):
     
     all_embeddings = []
     all_labels = []
     num_samples = len(prompts)
 
-    with torch.no_grad():
-        with autocast(dtype=torch.float16):
-            for batch_start in tqdm(range(0, num_samples, batch_size)):
-                    batch_prompts = prompts[batch_start: batch_start + batch_size]
-                    batch_labels = labels[batch_start: batch_start + batch_size]
-                    batch_prompts, batch_labels = collate_fn(batch_prompts,batch_labels)
-                    attention_mask = (batch_prompts != 0).half()
-                    batch_prompts = batch_prompts.cuda()
-                    batch_labels = batch_labels.cuda()
-                    attention_mask = attention_mask.to(batch_prompts.device)
-                    all_labels.append(batch_labels.cpu().numpy())
+    model = model.eval()          # ensure no dropout, etc.
 
-                    output = model(batch_prompts.squeeze(), attention_mask=attention_mask.squeeze(),  output_hidden_states=True)
-                    hidden_states = output.hidden_states
-
-                    hidden_states = torch.stack(hidden_states, dim=0).squeeze()
-                    last_layer_hidden_state = hidden_states[-1]  
-
-                    last_token_rep = get_last_non_padded_token_rep(last_layer_hidden_state, attention_mask.squeeze())  
-                    all_embeddings.append(last_token_rep)
-
-            all_embeddings = F.normalize(torch.concat(all_embeddings),p=2,dim=-1)
-   
-            pseudo_label = sinkhorn(all_embeddings, centroids)
+    with torch.no_grad():         # <--- MUST wrap entire function
+        for batch_start in tqdm(range(0, num_samples, batch_size)):
             
-            selected_indices = compute_entropy(all_embeddings, centroids, pseudo_label, num_selected_data, cls_dist, args)
-            
-            selected_labels_soft = pseudo_label[selected_indices]
-      
+            # ---- Prepare batch ----
+            batch_prompts = prompts[batch_start: batch_start + batch_size]
+            batch_labels = labels[batch_start: batch_start + batch_size]
+            batch_prompts, batch_labels = collate_fn(batch_prompts, batch_labels)
+
+            # Move to GPU
+            batch_prompts = batch_prompts.cuda(non_blocking=True)
+            batch_labels = batch_labels.cuda(non_blocking=True)
+            attention_mask = (batch_prompts != 0).to(batch_prompts.device)
+
+            all_labels.append(batch_labels.cpu().numpy())
+
+            # ---- MEMORY-SAFE FORWARD ----
+            # Only take hidden states from last layer, not all layers
+            with autocast(dtype=torch.float16):
+                output = model(
+                    input_ids=batch_prompts,
+                    attention_mask=attention_mask,
+                    output_hidden_states=True,         # <--- we need hidden_states[-1]
+                    use_cache=False
+                )
+
+            # ONLY last layer
+            last_layer_hidden_state = output.hidden_states[-1]   # shape: [B, L, H]
+
+            # Extract last real token
+            last_token_rep = get_last_non_padded_token_rep(
+                last_layer_hidden_state,
+                attention_mask
+            )  # shape: [B, H]
+
+            all_embeddings.append(last_token_rep.half().cpu())  # store on CPU
+
+        # ---- Combine all embeddings ----
+        all_embeddings = torch.cat(all_embeddings, dim=0).cuda()
+        all_embeddings = F.normalize(all_embeddings, p=2, dim=-1)
+
+        # ---- Sinkhorn pseudo-labels ----
+        pseudo_label = sinkhorn(all_embeddings, centroids.half())
+
+        # ---- Entropy-based selection ----
+        selected_indices = compute_entropy(
+            all_embeddings, centroids.half(), pseudo_label,
+            num_selected_data, cls_dist, args
+        )
+
+        selected_labels_soft = pseudo_label[selected_indices]
 
     return selected_indices, selected_labels_soft
 
