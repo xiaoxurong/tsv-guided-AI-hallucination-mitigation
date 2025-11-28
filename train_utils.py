@@ -83,18 +83,18 @@ def get_ex_data(model, prompts, labels, batch_size, centroids, sinkhorn, num_sel
 
 def compute_ot_loss_cos(last_token_rep, centroids, pseudo_label, batch_size, args):
     
-    last_token_rep = F.normalize(last_token_rep, p=2, dim=-1)
-    
-    centroids = F.normalize(centroids, p=2, dim=-1)
+    # make sure both tensors are float32 for matmul
+    last_token_rep = F.normalize(last_token_rep.float(), p=2, dim=-1)
+    centroids = F.normalize(centroids.float(), p=2, dim=-1)
 
-    similarities = torch.matmul(last_token_rep, centroids.T)  
+    similarities = torch.matmul(last_token_rep, centroids.T)
 
     similarities = similarities / args.cos_temp
-    
-    pt = F.softmax(similarities, dim=-1)  
-    
-    ot_loss = -torch.sum(pseudo_label * torch.log(pt + 1e-8)) / pseudo_label.shape[0]
-    
+
+    pt = torch.softmax(similarities, dim=-1)
+
+    ot_loss = -torch.sum(pseudo_label.float() * torch.log(pt + 1e-8)) / pseudo_label.shape[0]
+
     return ot_loss, similarities
 
 
