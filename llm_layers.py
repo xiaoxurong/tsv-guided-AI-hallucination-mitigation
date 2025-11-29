@@ -19,19 +19,19 @@ class LlamaDecoderLayerWrapper(nn.Module):
         hidden_states,
         attention_mask=None,
         position_ids=None,
-        past_key_value=None,
+        past_key_values=None,
         output_attentions=False,
         use_cache=False,
         cache_position=None,
         position_embeddings=None,
         **kwargs,
     ):
-        # Call original layer
+        # ---- Call original layer exactly as HF expects ----
         out = self.inner(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
             position_ids=position_ids,
-            past_key_value=past_key_value,
+            past_key_values=past_key_values,
             output_attentions=output_attentions,
             use_cache=use_cache,
             cache_position=cache_position,
@@ -39,42 +39,22 @@ class LlamaDecoderLayerWrapper(nn.Module):
             **kwargs,
         )
 
-        # ------------------------------
-        # Normalize output to tuple
-        # ------------------------------
+        # HF always returns BaseModelOutputWithPast
+        # which behaves like a tuple: (hidden_states, ...)
+        hidden_states = out[0]
+
+        # ---- add TSV ----
+        hidden_states = self.tsv(hidden_states)
+
+        # ---- reconstruct same structure ----
+        # out is a BaseModelOutputWithPast / tuple-like object
+        new_out = list(out)
+        new_out[0] = hidden_states      # replace only the hidden states
+
         if isinstance(out, tuple):
-            hs = out[0]
-            rest = list(out[1:])
+            return tuple(new_out)
         else:
-            hs = out
-            rest = []
-
-        # Inject TSV
-        hs = self.tsv(hs)
-
-        # ------------------------------
-        # Rebuild EXACT llama return format
-        # ------------------------------
-
-        # Case 1: no attentions, no cache
-        if not output_attentions and not use_cache:
-            return (hs,)
-
-        # Case 2: no attentions, cache
-        if not output_attentions and use_cache:
-            present = rest[0] if len(rest) >= 1 else None
-            return (hs, present)
-
-        # Case 3: attentions only
-        if output_attentions and not use_cache:
-            attn = rest[0] if len(rest) >= 1 else None
-            return (hs, attn)
-
-        # Case 4: attentions + cache
-        if output_attentions and use_cache:
-            attn = rest[0] if len(rest) >= 1 else None
-            present = rest[1] if len(rest) >= 2 else None
-            return (hs, attn, present)
+            return out.__class__(*new_out)
         
 class TSVLayer(nn.Module):
 
