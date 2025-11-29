@@ -26,7 +26,7 @@ class LlamaDecoderLayerWrapper(nn.Module):
         position_embeddings=None,
         **kwargs,
     ):
-        # ---- Run the ORIGINAL layer ----
+        # Call original layer
         out = self.inner(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
@@ -39,22 +39,42 @@ class LlamaDecoderLayerWrapper(nn.Module):
             **kwargs,
         )
 
-        # ---- Unpack original output ----
+        # ------------------------------
+        # Normalize output to tuple
+        # ------------------------------
         if isinstance(out, tuple):
-            hidden_states = out[0]
-            rest = out[1:]
+            hs = out[0]
+            rest = list(out[1:])
         else:
-            hidden_states = out
-            rest = ()
+            hs = out
+            rest = []
 
-        # ---- Inject TSV ----
-        hidden_states = self.tsv(hidden_states)
+        # Inject TSV
+        hs = self.tsv(hs)
 
-        # ---- Repack exactly like original ----
-        if isinstance(out, tuple):
-            return (hidden_states, *rest)
-        else:
-            return hidden_states
+        # ------------------------------
+        # Rebuild EXACT llama return format
+        # ------------------------------
+
+        # Case 1: no attentions, no cache
+        if not output_attentions and not use_cache:
+            return (hs,)
+
+        # Case 2: no attentions, cache
+        if not output_attentions and use_cache:
+            present = rest[0] if len(rest) >= 1 else None
+            return (hs, present)
+
+        # Case 3: attentions only
+        if output_attentions and not use_cache:
+            attn = rest[0] if len(rest) >= 1 else None
+            return (hs, attn)
+
+        # Case 4: attentions + cache
+        if output_attentions and use_cache:
+            attn = rest[0] if len(rest) >= 1 else None
+            present = rest[1] if len(rest) >= 2 else None
+            return (hs, attn, present)
         
 class TSVLayer(nn.Module):
 
