@@ -196,21 +196,23 @@ def train_model(model, optimizer, device, prompts, labels, args):
     logging.info(f"SS Learning Starts")
     
     with torch.no_grad():
-   
+    
         selected_indices, selected_labels_soft = get_ex_data(model, train_prompts, train_labels, batch_size, centroids, sinkhorn, args.num_selected_data, cls_dist, args)
         
         num_samples = len(selected_indices) + args.num_exemplars
-        
-    num_epochs = args.aug_num_epochs
-
-    exemplar_label = torch.tensor(exemplar_labels()).to(device)
+            
+    exemplar_label = torch.tensor(exemplar_labels()).to(device) # <--- This is the function call
 
     selected_prompts = [train_prompts[i] for i in selected_indices] 
     selected_labels = selected_labels_soft
     
     augmented_prompts = selected_prompts + exemplar_prompts_
-    exemplar_labels = torch.nn.functional.one_hot(exemplar_label.to(torch.int64), num_classes=2)
-    augmented_labels = torch.concat((selected_labels, exemplar_labels.clone().to(device)))
+    
+    # FIX: Renamed the variable from 'exemplar_labels' to 'exemplar_labels_oh'
+    exemplar_labels_oh = torch.nn.functional.one_hot(exemplar_label.to(torch.int64), num_classes=2)
+    
+    # FIX: Use the new variable name here
+    augmented_labels = torch.concat((selected_labels, exemplar_labels_oh.clone().to(device)))
 
     augmented_prompts_train = augmented_prompts
     augmented_labels_label = augmented_labels
