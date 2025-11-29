@@ -80,7 +80,9 @@ def train_model(model, optimizer, device, prompts, labels, args):
     logging.info(f"Training parameters: few_shot_size={args.num_exemplars}, num_selected_data={args.num_selected_data}, component={args.component}, str_layer={args.str_layer}")
     
     test_prompts, train_prompts, exemplar_prompts = prompts[0], prompts[1], prompts[2]
-    test_labels, train_labels, exemplar_labels = labels[0], labels[1], labels[2]
+    # FIX 1: Rename the data tensor variable here to avoid conflict
+    test_labels, train_labels, exemplar_data_labels = labels[0], labels[1], labels[2] 
+    
     batch_size = args.batch_size
     num_samples = len(train_prompts)
     
@@ -95,8 +97,9 @@ def train_model(model, optimizer, device, prompts, labels, args):
     args.num_iters_sk = 3
     args.epsilon_sk = 0.05
     
-    ex_hallu = (num_exemplars-exemplar_labels[:num_exemplars].sum())/num_exemplars
-    ex_true = (exemplar_labels[:num_exemplars].sum())/num_exemplars
+    # FIX 2: Use the new data tensor name
+    ex_hallu = (num_exemplars-exemplar_data_labels[:num_exemplars].sum())/num_exemplars
+    ex_true = (exemplar_data_labels[:num_exemplars].sum())/num_exemplars
     cls_dist = torch.tensor([ex_hallu,ex_true]).float().to(device)
     cls_dist = cls_dist.view(-1, 1) 
     sinkhorn = SinkhornKnopp_imb(args, cls_dist)
@@ -105,8 +108,11 @@ def train_model(model, optimizer, device, prompts, labels, args):
     centroids = torch.randn((2, model.config.hidden_size)).half().to(device)
     centroids = F.normalize(centroids, p=2, dim=1)   
     
-    exemplar_prompts_, exemplar_labels_ = exemplar_prompts, exemplar_labels    
-    exemplar_prompts, exemplar_labels = collate_fn(exemplar_prompts, exemplar_labels) 
+    # FIX 3: Use the new data tensor name
+    exemplar_prompts_, exemplar_labels_ = exemplar_prompts, exemplar_data_labels    
+    
+    # FIX 4: Use the new data tensor name in collate_fn output
+    exemplar_prompts, exemplar_data_labels = collate_fn(exemplar_prompts, exemplar_data_labels) 
 
     num_epochs = args.init_num_epochs
         
@@ -120,7 +126,8 @@ def train_model(model, optimizer, device, prompts, labels, args):
         for batch_start in tqdm(range(0, num_samples, batch_size), desc=f"Epoch {epoch+1}/{num_epochs} Batches", leave=False):
 
             batch_prompts = exemplar_prompts[batch_start: batch_start + batch_size]
-            batch_labels = exemplar_labels[batch_start: batch_start + batch_size]
+            # FIX 5: Use the new data tensor name here
+            batch_labels = exemplar_data_labels[batch_start: batch_start + batch_size] 
             
             # Create attention masks (1 for real tokens, 0 for padding)
             attention_mask = (batch_prompts != 0).half() 
@@ -201,7 +208,8 @@ def train_model(model, optimizer, device, prompts, labels, args):
         
         num_samples = len(selected_indices) + args.num_exemplars
             
-    exemplar_label = torch.tensor(exemplar_labels()).to(device) # <--- This is the function call
+    # This line now calls the original function, as the data variable was renamed.
+    exemplar_label = torch.tensor(exemplar_labels()).to(device) 
 
     selected_prompts = [train_prompts[i] for i in selected_indices] 
     selected_labels = selected_labels_soft
