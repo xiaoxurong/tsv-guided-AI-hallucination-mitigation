@@ -9,105 +9,69 @@ from cache_utils import Cache
 from transformers.activations import ACT2FN
 
 class LlamaDecoderLayerWrapper(nn.Module):
-    def __init__(self, llama_decoder_layer, tsv_layer, model_name='llama3.1-8B'):
+    """
+    Safe wrapper for LLaMA decoder layers.
+    
+    This wrapper:
+        - Calls the original HF decoder layer exactly as-is
+        - Preserves SDPA attention shapes (prevents repeat_kv errors)
+        - Injects TSV AFTER the MLP output (correct location for steering)
+        - Supports all output formats (hidden_states, attn, cache)
+    """
+
+    def __init__(self, llama_decoder_layer, tsv_layer):
         super().__init__()
-        self.llama_decoder_layer = llama_decoder_layer
-        self.tsv_layer = tsv_layer
-        self.model_name = model_name
+        self.inner = llama_decoder_layer        # original HF layer
+        self.tsv_layer = tsv_layer              # your steering vector layer
 
     def forward(
         self,
         hidden_states: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
-        past_key_value: Optional[Cache] = None,
-        output_attentions: Optional[bool] = False,
-        use_cache: Optional[bool] = False,
+        past_key_value=None,
+        output_attentions: bool = False,
+        use_cache: bool = False,
         cache_position: Optional[torch.LongTensor] = None,
         position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         **kwargs,
     ):
+        """
+        IMPORTANT:
+        - We DO NOT reimplement self-attention or MLP logic.
+        - We simply call the existing layer and then add TSV.
+        """
 
-        # -------------------------
-        # 1. Input layernorm
-        # -------------------------
-        residual = hidden_states
-        hidden_states = self.llama_decoder_layer.input_layernorm(hidden_states)
+        # Call HF's native decoder layer (LlamaDecoderLayer.forward)
+        out = self.inner(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_value=past_key_value,
+            output_attentions=output_attentions,
+            use_cache=use_cache,
+            cache_position=cache_position,
+            position_embeddings=position_embeddings,
+            **kwargs,
+        )
 
-        # -------------------------
-        # 2. Self-attention
-        # -------------------------
+        # Case 1: HF returned a single Tensor (no cache, no attn)
+        if isinstance(out, torch.Tensor):
+            hidden_states = out
+            hidden_states = self.tsv_layer(hidden_states)
+            return hidden_states
 
-        if self.model_name == "qwen2.5-7B":
-            attn_out = self.llama_decoder_layer.self_attn(
-                hidden_states=hidden_states,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                past_key_value=past_key_value,
-                output_attentions=output_attentions,
-                use_cache=use_cache,
-                cache_position=cache_position,
-                **kwargs,
-            )
-        else:
-            attn_out = self.llama_decoder_layer.self_attn(
-                hidden_states=hidden_states,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                past_key_value=past_key_value,
-                output_attentions=output_attentions,
-                use_cache=use_cache,
-                cache_position=cache_position,
-                position_embeddings=position_embeddings,
-                **kwargs,
-            )
-
-        # Normalize output into (hidden, attn_weights, present_key_value)
-        # HF Llama3 returns 2 values, older Llama returns 3
-        if output_attentions:
-            # Must match HF ordering!
-            hidden_states, self_attn_weights, present_key_value = attn_out
-        else:
-            # No attention weights returned → need to detect 2 or 3 returns
-            if len(attn_out) == 3:
-                hidden_states, _, present_key_value = attn_out
-            else:
-                hidden_states, present_key_value = attn_out
-
-                # For consistency:
-                self_attn_weights = None
-
-        # -------------------------
-        # 3. Add self-attention residual
-        # -------------------------
-        hidden_states = residual + hidden_states
-
-        # -------------------------
-        # 4. Post-attention MLP block
-        # -------------------------
-        residual = hidden_states
-        hidden_states = self.llama_decoder_layer.post_attention_layernorm(hidden_states)
-        hidden_states = self.llama_decoder_layer.mlp(hidden_states)
-        hidden_states = residual + hidden_states
-
-        # -------------------------
-        # 5. TSV Injection
-        # -------------------------
+        # Case 2: HF returned a tuple
+        # Example formats:
+        #   (hidden_states,)
+        #   (hidden_states, present_key_value)
+        #   (hidden_states, attn_weights)
+        #   (hidden_states, attn_weights, present_key_value)
+        hidden_states = out[0]
         hidden_states = self.tsv_layer(hidden_states)
 
-        # -------------------------
-        # 6. Return outputs in EXACT HF format
-        # -------------------------
-        if output_attentions and use_cache:
-            return hidden_states, self_attn_weights, present_key_value
-
-        if output_attentions:
-            return hidden_states, self_attn_weights
-
-        if use_cache:
-            return hidden_states, present_key_value
-
-        return hidden_states
+        # Rebuild the tuple, replacing only the first element
+        return (hidden_states, *out[1:])
         
 class TSVLayer(nn.Module):
 
