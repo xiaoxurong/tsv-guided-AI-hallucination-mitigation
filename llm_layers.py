@@ -12,7 +12,7 @@ class LlamaDecoderLayerWrapper(nn.Module):
     def __init__(self, llama_decoder_layer, tsv_layer, model_name='llama3.1-8B'):
         super().__init__()
         self.llama_decoder_layer = llama_decoder_layer
-        self.tsv_layer = tsv_layer  # Instance of ICVLayer
+        self.tsv_layer = tsv_layer
         self.model_name = model_name
 
     def forward(
@@ -26,16 +26,20 @@ class LlamaDecoderLayerWrapper(nn.Module):
         cache_position: Optional[torch.LongTensor] = None,
         position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         **kwargs,
-    )-> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
-        # Save original residual state
-        residual = hidden_states
+    ):
 
-        # Forward pass through the input layer norm
+        # -------------------------
+        # 1. Input layernorm
+        # -------------------------
+        residual = hidden_states
         hidden_states = self.llama_decoder_layer.input_layernorm(hidden_states)
 
+        # -------------------------
+        # 2. Self-attention
+        # -------------------------
 
-        if self.model_name == 'qwen2.5-7B':
-            hidden_states, self_attn_weights, present_key_value = self.llama_decoder_layer.self_attn(
+        if self.model_name == "qwen2.5-7B":
+            attn_out = self.llama_decoder_layer.self_attn(
                 hidden_states=hidden_states,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
@@ -45,7 +49,6 @@ class LlamaDecoderLayerWrapper(nn.Module):
                 cache_position=cache_position,
                 **kwargs,
             )
-            
         else:
             attn_out = self.llama_decoder_layer.self_attn(
                 hidden_states=hidden_states,
@@ -59,48 +62,51 @@ class LlamaDecoderLayerWrapper(nn.Module):
                 **kwargs,
             )
 
-            # Unpack depending on number of returned values (2 for Llama-3, 3 for older Llama)
+        # Normalize output into (hidden, attn_weights, present_key_value)
+        # HF Llama3 returns 2 values, older Llama returns 3
+        if output_attentions:
+            # Must match HF ordering!
+            hidden_states, self_attn_weights, present_key_value = attn_out
+        else:
+            # No attention weights returned → need to detect 2 or 3 returns
             if len(attn_out) == 3:
-                hidden_states, self_attn_weights, present_key_value = attn_out
-            elif len(attn_out) == 2:
-                hidden_states, present_key_value = attn_out
-                self_attn_weights = None
+                hidden_states, _, present_key_value = attn_out
             else:
-                raise ValueError(f"Unexpected number of outputs from self_attn: got {len(attn_out)}")
-                
-        # Add residual + steering vector after self-attention
-        hidden_states = residual.to(hidden_states.device) + hidden_states
-        
+                hidden_states, present_key_value = attn_out
 
-        # Save residual state for the MLP
+                # For consistency:
+                self_attn_weights = None
+
+        # -------------------------
+        # 3. Add self-attention residual
+        # -------------------------
+        hidden_states = residual + hidden_states
+
+        # -------------------------
+        # 4. Post-attention MLP block
+        # -------------------------
         residual = hidden_states
-
-        # Forward pass through the post-attention layer norm and MLP
         hidden_states = self.llama_decoder_layer.post_attention_layernorm(hidden_states)
         hidden_states = self.llama_decoder_layer.mlp(hidden_states)
-
-        # Add residual + steering vector after MLP
         hidden_states = residual + hidden_states
-        hidden_states = self.tsv_layer(hidden_states)  # Add steering vector
 
-        # Return the outputs
-        if not output_attentions and not use_cache:
-            # Llama expects ONLY hidden_states (tensor)
-            return hidden_states
+        # -------------------------
+        # 5. TSV Injection
+        # -------------------------
+        hidden_states = self.tsv_layer(hidden_states)
 
-        # If attention weights AND cache are requested:
+        # -------------------------
+        # 6. Return outputs in EXACT HF format
+        # -------------------------
         if output_attentions and use_cache:
             return hidden_states, self_attn_weights, present_key_value
 
-        # If only attention weights are requested:
         if output_attentions:
             return hidden_states, self_attn_weights
 
-        # If only cache is requested:
         if use_cache:
             return hidden_states, present_key_value
 
-        # Fallback (should not happen)
         return hidden_states
         
 class TSVLayer(nn.Module):
