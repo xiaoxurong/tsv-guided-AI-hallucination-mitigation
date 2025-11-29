@@ -207,9 +207,8 @@ def train_model(model, optimizer, device, prompts, labels, args):
         selected_indices, selected_labels_soft = get_ex_data(model, train_prompts, train_labels, batch_size, centroids, sinkhorn, args.num_selected_data, cls_dist, args)
         
         num_samples = len(selected_indices) + args.num_exemplars
-            
-    # This line now calls the original function, as the data variable was renamed.
-    exemplar_label = torch.tensor(exemplar_labels()).to(device) 
+    # FIX 6: Rename the exemplar label variable to avoid conflict
+    exemplar_label = torch.tensor(exemplar_labels_).to(device)#  
 
     selected_prompts = [train_prompts[i] for i in selected_indices] 
     selected_labels = selected_labels_soft
