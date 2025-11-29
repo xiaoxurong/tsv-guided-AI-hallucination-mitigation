@@ -9,40 +9,24 @@ from cache_utils import Cache
 from transformers.activations import ACT2FN
 
 class LlamaDecoderLayerWrapper(nn.Module):
-    """
-    Safe wrapper for LLaMA decoder layers.
-    
-    This wrapper:
-        - Calls the original HF decoder layer exactly as-is
-        - Preserves SDPA attention shapes (prevents repeat_kv errors)
-        - Injects TSV AFTER the MLP output (correct location for steering)
-        - Supports all output formats (hidden_states, attn, cache)
-    """
-
     def __init__(self, llama_decoder_layer, tsv_layer):
         super().__init__()
-        self.inner = llama_decoder_layer        # original HF layer
-        self.tsv_layer = tsv_layer              # your steering vector layer
+        self.inner = llama_decoder_layer
+        self.tsv = tsv_layer
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
+        hidden_states,
+        attention_mask=None,
+        position_ids=None,
         past_key_value=None,
-        output_attentions: bool = False,
-        use_cache: bool = False,
-        cache_position: Optional[torch.LongTensor] = None,
-        position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        output_attentions=False,
+        use_cache=False,
+        cache_position=None,
+        position_embeddings=None,
         **kwargs,
     ):
-        """
-        IMPORTANT:
-        - We DO NOT reimplement self-attention or MLP logic.
-        - We simply call the existing layer and then add TSV.
-        """
-
-        # Call HF's native decoder layer (LlamaDecoderLayer.forward)
+        # ---- Run the ORIGINAL layer ----
         out = self.inner(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
@@ -55,23 +39,22 @@ class LlamaDecoderLayerWrapper(nn.Module):
             **kwargs,
         )
 
-        # Case 1: HF returned a single Tensor (no cache, no attn)
-        if isinstance(out, torch.Tensor):
+        # ---- Unpack original output ----
+        if isinstance(out, tuple):
+            hidden_states = out[0]
+            rest = out[1:]
+        else:
             hidden_states = out
-            hidden_states = self.tsv_layer(hidden_states)
+            rest = ()
+
+        # ---- Inject TSV ----
+        hidden_states = self.tsv(hidden_states)
+
+        # ---- Repack exactly like original ----
+        if isinstance(out, tuple):
+            return (hidden_states, *rest)
+        else:
             return hidden_states
-
-        # Case 2: HF returned a tuple
-        # Example formats:
-        #   (hidden_states,)
-        #   (hidden_states, present_key_value)
-        #   (hidden_states, attn_weights)
-        #   (hidden_states, attn_weights, present_key_value)
-        hidden_states = out[0]
-        hidden_states = self.tsv_layer(hidden_states)
-
-        # Rebuild the tuple, replacing only the first element
-        return (hidden_states, *out[1:])
         
 class TSVLayer(nn.Module):
 
