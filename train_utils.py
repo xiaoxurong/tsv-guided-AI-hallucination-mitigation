@@ -8,21 +8,22 @@ import torch.nn.functional as F
 
 def collate_fn(prompts, labels):
 
-    # Find the maximum sequence length in the batch
     max_seq_len = max(prompt.size(1) for prompt in prompts)
-
-    # Initialize a tensor to hold the batched prompts
     batch_size = len(prompts)
     dtype = prompts[0].dtype
-    device = prompts[0].device  # Assuming all prompts are on the same device
-    prompts_padded = torch.zeros(batch_size, 1, max_seq_len, dtype=dtype)
+    device = prompts[0].device
+
+    # CHANGE 1: Remove the '1' in the shape definition. Shape is now [Batch, Max_Seq_Len]
+    prompts_padded = torch.zeros(batch_size, max_seq_len, dtype=dtype, device=device) # <-- Removed the '1'
 
     # Pad each prompt to the maximum sequence length
     for i, prompt in enumerate(prompts):
         seq_len = prompt.size(1)
-        prompts_padded[i, :, :seq_len] = prompt
+        
+        # CHANGE 2: Indexing also removes the '1' dimension.
+        # Assuming prompt shape is [1, L] (typical tokenizer output)
+        prompts_padded[i, :seq_len] = prompt.squeeze(0) # <-- Squeeze the input prompt
 
-    # Stack labels into a tensor
     labels = torch.tensor(labels, dtype=torch.long, device=device)
 
     return prompts_padded, labels
@@ -112,8 +113,8 @@ def get_ex_data(model, prompts, labels, batch_size, centroids, sinkhorn,
             ):
                 with autocast(dtype=torch.float16):
                     output = model(
-                        input_ids=batch_prompts,
-                        attention_mask=attention_mask,
+                    input_ids=batch_prompts.squeeze(1), 
+                    attention_mask=attention_mask.squeeze(1),
                         output_hidden_states=True,   # need hidden_states[-1]
                         use_cache=False              # disable KV cache
                     )
