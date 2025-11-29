@@ -197,10 +197,9 @@ def add_tsv_layers(model: PreTrainedModel, tsv: Tensor, alpha: list, args):
     elif args.component == 'res':
         for i, layer in enumerate(layers):
             if i == args.str_layer:
-                original_layer = layers[i]
-
-                # Insert TSV after residual-add following MLP
-                original_layer.mlp = nn.Sequential(
-                    original_layer.mlp,
+                # patch only AFTER MLP inside the decoder layer
+                orig_mlp = layer.mlp
+                layer.mlp = nn.Sequential(
+                    orig_mlp,
                     TSVLayer(tsv[i], alpha)
                 )
