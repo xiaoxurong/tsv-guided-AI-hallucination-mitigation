@@ -216,4 +216,4 @@ def add_tsv_layers(model: PreTrainedModel, tsv: Tensor, alpha: list, args):
         for i, layer in enumerate(layers):
             if i == args.str_layer:
                 decoder_layer = layers[i]
-                layers[i] = LlamaDecoderLayerWrapper(decoder_layer, TSVLayer(tsv[i], alpha), args.model_name)
+                layers[i] = LlamaDecoderLayerWrapper(decoder_layer, TSVLayer(tsv[i], alpha))
