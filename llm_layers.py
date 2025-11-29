@@ -195,8 +195,12 @@ def add_tsv_layers(model: PreTrainedModel, tsv: Tensor, alpha: list, args):
                 layer.self_attn = nn.Sequential(original_attn, TSVLayer(tsv[i], alpha)) 
                 
     elif args.component == 'res':
-        
         for i, layer in enumerate(layers):
             if i == args.str_layer:
-                decoder_layer = layers[i]
-                layers[i] = LlamaDecoderLayerWrapper(decoder_layer, TSVLayer(tsv[i], alpha))
+                original_layer = layers[i]
+
+                # Insert TSV after residual-add following MLP
+                original_layer.mlp = nn.Sequential(
+                    original_layer.mlp,
+                    TSVLayer(tsv[i], alpha)
+                )
