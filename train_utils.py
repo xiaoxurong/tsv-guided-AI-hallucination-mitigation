@@ -80,17 +80,18 @@ def get_last_non_padded_token_rep(hidden_states, attention_mask):
 
 #     return selected_indices, selected_labels_soft
 
-def get_ex_data(model, prompts, labels, batch_size, centroids, sinkhorn, num_selected_data, cls_dist, args):
-    
+def get_ex_data(model, prompts, labels, batch_size, centroids, sinkhorn, 
+                num_selected_data, cls_dist, args):
+
+    model.eval()
+
     all_embeddings = []
     all_labels = []
     num_samples = len(prompts)
 
-    model = model.eval()          # ensure no dropout, etc.
-
-    with torch.no_grad():         # <--- MUST wrap entire function
+    with torch.no_grad():
         for batch_start in tqdm(range(0, num_samples, batch_size)):
-            
+
             # ---- Prepare batch ----
             batch_prompts = prompts[batch_start: batch_start + batch_size]
             batch_labels = labels[batch_start: batch_start + batch_size]
@@ -103,37 +104,46 @@ def get_ex_data(model, prompts, labels, batch_size, centroids, sinkhorn, num_sel
 
             all_labels.append(batch_labels.cpu().numpy())
 
-            # ---- MEMORY-SAFE FORWARD ----
-            # Only take hidden states from last layer, not all layers
-            with autocast(dtype=torch.float16):
-                output = model(
-                    input_ids=batch_prompts,
-                    attention_mask=attention_mask,
-                    output_hidden_states=True,         # <--- we need hidden_states[-1]
-                    use_cache=False
-                )
+            # ---- IMPORTANT: disable SDPA to avoid repeat_kv unpack errors ----
+            with torch.backends.cuda.sdp_kernel(
+                enable_flash=False,
+                enable_math=True,
+                enable_mem_efficient=False
+            ):
+                with autocast(dtype=torch.float16):
+                    output = model(
+                        input_ids=batch_prompts,
+                        attention_mask=attention_mask,
+                        output_hidden_states=True,   # need hidden_states[-1]
+                        use_cache=False              # disable KV cache
+                    )
 
-            # ONLY last layer
-            last_layer_hidden_state = output.hidden_states[-1]   # shape: [B, L, H]
+            # ---- Last layer hidden state only ----
+            last_hidden = output.hidden_states[-1]  # [B, L, H]
 
-            # Extract last real token
+            # ---- Extract last non padded token ----
             last_token_rep = get_last_non_padded_token_rep(
-                last_layer_hidden_state,
-                attention_mask
-            )  # shape: [B, H]
+                last_hidden, attention_mask
+            )  # [B, H]
 
-            all_embeddings.append(last_token_rep.half().cpu())  # store on CPU
+            # Store on CPU to save vRAM
+            all_embeddings.append(last_token_rep.float().cpu())
 
-        # ---- Combine all embeddings ----
-        all_embeddings = torch.cat(all_embeddings, dim=0).cuda()
+        # ---- Combine & move back to GPU ----
+        all_embeddings = torch.cat(all_embeddings, dim=0).cuda()  # [N, H]
+
+        # Normalize (FP32 for stability)
         all_embeddings = F.normalize(all_embeddings, p=2, dim=-1)
 
+        # Ensure centroids are FP32 too
+        centroids = centroids.float().cuda()
+
         # ---- Sinkhorn pseudo-labels ----
-        pseudo_label = sinkhorn(all_embeddings, centroids.half())
+        pseudo_label = sinkhorn(all_embeddings, centroids)  # FP32
 
         # ---- Entropy-based selection ----
         selected_indices = compute_entropy(
-            all_embeddings, centroids.half(), pseudo_label,
+            all_embeddings, centroids, pseudo_label,
             num_selected_data, cls_dist, args
         )
 
