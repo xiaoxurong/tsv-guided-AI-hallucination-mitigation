@@ -1,39 +1,12 @@
 import os
 import torch
 
-# ============================================================
-#  DISABLE FLASH ATTENTION / SDPA / MEMORY-EFFICIENT ATTENTION
-# ============================================================
-# os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
-# # Disable FlashAttention v2
-# try:
-#     torch.backends.cuda.flash_sdp_enabled(False)
-# except:
-#     pass
-
-# # Disable Math-sdp
-# try:
-#     torch.backends.cuda.math_sdp_enabled(False)
-# except:
-#     pass
-
-# # Disable Memory-Efficient SDP kernels
-# try:
-#     torch.backends.cuda.mem_efficient_sdp_enabled(False)
-# except:
-#     pass
-
-# # Force Transformers to use the "eager" attention implementation
-# os.environ["HF_USE_SDPA"] = "0"
-# os.environ["PYTORCH_SDPA"] = "0"
-# os.environ["PYTORCH_CUDA_SDPA"] = "0"
-# ============================================================
-
 import torch.nn as nn
 from datasets import load_dataset
 from tqdm import tqdm
 import numpy as np
 import argparse
+import random
 from train_utils import get_last_non_padded_token_rep, compute_ot_loss_cos, update_centroids_ema, update_centroids_ema_hard, get_ex_data, collate_fn
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from llm_layers import LlamaDecoderLayerWrapper, add_tsv_layers
@@ -46,9 +19,6 @@ import logging
 
 
 def seed_everything(seed: int):
-    import random, os
-    import numpy as np
-    import torch
 
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
