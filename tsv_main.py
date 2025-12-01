@@ -7,7 +7,7 @@ from tqdm import tqdm
 import numpy as np
 import argparse
 import random
-from train_utils import get_last_non_padded_token_rep, compute_ot_loss_cos, update_centroids_ema, update_centroids_ema_hard, get_ex_data, collate_fn
+from train_utils import get_last_non_padded_token_rep, compute_ot_loss_cos, update_centroids_ema, update_centroids_ema_hard, get_ex_data, collate_fn, compute_ot_and_repulsion_loss
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from llm_layers import LlamaDecoderLayerWrapper, add_tsv_layers
 from llm_layers import get_layers
@@ -122,9 +122,23 @@ def train_model(model, optimizer, device, prompts, labels, args):
                 
                 batch_labels_oh = torch.nn.functional.one_hot(batch_labels, num_classes=-1)
                 
-                ot_loss, similarities = compute_ot_loss_cos(last_token_rep, centroids, batch_labels_oh, batch_size, args)
                 
-                loss = ot_loss 
+                # ot_loss, similarities = compute_ot_loss_cos(last_token_rep, centroids, batch_labels_oh, batch_size, args)
+                
+                # loss = ot_loss 
+
+                if args.loss_type == 'repulsion':
+                    # Calls the function that includes: OT_loss + lambda_rep * (mu_T^T * mu_H)^2
+                    loss, similarities = compute_ot_and_repulsion_loss(
+                        last_token_rep, centroids, batch_labels_oh, args
+                    )
+                elif args.loss_type == 'original':
+                    # Calls the function for the original MLE objective (Eq. 5)
+                    loss, similarities = compute_ot_loss_cos(
+                        last_token_rep, centroids, batch_labels_oh, args
+                    )
+                else:
+                    raise ValueError(f"Unknown loss type: {args.loss_type}. Must be 'original' or 'repulsion'.")
                 
                 total += batch_labels.size(0)
                 
@@ -387,6 +401,9 @@ def main():
     parser.add_argument("--str_layer", type=int, default=9)
     parser.add_argument("--component", type=str, default='res')
     parser.add_argument("--lam", type=float, default=5)
+    parser.add_argument("--loss_type", type=str, default='original', 
+                        choices=['original', 'repulsion'], 
+                        help='Choose the objective function: "original" (MLE) or "repulsion" (MLE + Repulsion Term)')
     parser.add_argument("--init_num_epochs", type=int, default=20)
     parser.add_argument("--aug_num_epochs", type=int, default=20)
     parser.add_argument("--num_exemplars", type=int, default=32)
@@ -395,6 +412,7 @@ def main():
     parser.add_argument("--optimizer", type=str, default='AdamW')
     parser.add_argument("--num_iters_sk", type=int, default=3)
     parser.add_argument("--epsilon_sk", type=float, default=0.05)
+   
     
     args = parser.parse_args()
         

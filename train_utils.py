@@ -174,6 +174,57 @@ def compute_entropy(last_token_rep, centroids, pseudo_label, k, cls_dist, args):
         
     return top_k_indices  
 
+def compute_ot_and_repulsion_loss(last_token_rep, centroids, pseudo_label, args):
+    """
+    Calculates the combined Optimal Transport (OT) loss and the Prototype Repulsion loss.
+
+    L = OT_loss + lambda_rep * (mu_T^T * mu_H)^2
+
+    Args:
+        last_token_rep (torch.Tensor): Embeddings of the last non-padded tokens [B, H].
+        centroids (torch.Tensor): Centroids/Prototypes [2, H]. Assumes centroids[0] is mu_T
+                                   and centroids[1] is mu_H (or vice versa).
+        pseudo_label (torch.Tensor): Soft pseudo-labels [B, 2].
+        args: Arguments object containing cos_temp and lam (lambda_rep).
+
+    Returns:
+        torch.Tensor: The total combined loss (scalar).
+        torch.Tensor: The similarities matrix [B, 2].
+    """
+    
+    # Ensure both tensors are float32 and normalized for stable cosine similarity
+    last_token_rep_norm = F.normalize(last_token_rep.float(), p=2, dim=-1)
+    centroids_norm = F.normalize(centroids.float(), p=2, dim=-1)
+
+    # Cosine Similarity: [B, H] @ [H, 2] -> [B, 2]
+    similarities = torch.matmul(last_token_rep_norm, centroids_norm.T)
+
+    # Apply temperature (tau)
+    similarities = similarities / args.cos_temp
+
+    # Compute softmax probabilities (p_t or q in your notation)
+    pt = torch.softmax(similarities, dim=-1)
+
+    # Calculate cross-entropy loss (OT loss)
+    # L_OT = - sum(pseudo_label * log(pt)) / N
+    ot_loss = -torch.sum(pseudo_label.float() * torch.log(pt + 1e-8)) / pseudo_label.shape[0]
+    
+    # Extract mu_T and mu_H (assumed to be centroids[0] and centroids[1])
+    mu_T = centroids_norm[0]
+    mu_H = centroids_norm[1]
+    
+    # Calculate the dot product (cosine similarity, since they are normalized)
+    # This is mu_T^T * mu_H
+    dot_product = torch.dot(mu_T, mu_H)
+    
+    # Calculate the squared dot product: (mu_T^T * mu_H)^2
+    squared_dot_product = dot_product.pow(2)
+
+    repulsion_loss = args.lam * squared_dot_product
+    total_loss = ot_loss + repulsion_loss
+
+    return total_loss, similarities
+
 
 def update_centroids_ema(centroids, last_token_rep, pseudo_label, args):
 
