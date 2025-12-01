@@ -26,13 +26,13 @@ This project is designed to be modular. The core logic resides in mitigation.py,
 
 ├── package_vectors.pu            # UTILITIES: Handles loading the `.pt` vectors.
 
-├── README.md           # 📄 DOCS: This file.
+├── README.md           #  DOCS: This file.
 
 ├── score_result.py      # EVALUATION: Score the result from mitigation.
 
 ├── utils.py   #  UTILITIES: Generate mock data for testing
 
-└── tsv_vectors_layer_X.pt  # 📦 DATA: (External) The saved vectors from the Detection team.
+└── tsv_vectors_layer_X.pt  #  DATA: (External) The saved vectors from the Detection team.
 
 
 

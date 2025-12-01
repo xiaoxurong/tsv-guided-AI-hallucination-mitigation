@@ -4,7 +4,7 @@ import time
 
 # --- DEBUG CONFIGURATION ---
 # We use GPT-2 (Small) because it only needs ~500MB RAM.
-# If this runs fast, your code is perfect, but your computer just can't handle LLaMA-8B.
+# If this runs fast, the code is perfect, but the computer just can't handle LLaMA-8B.
 MODEL_NAME = "gpt2" 
 DEVICE = "cpu" 
 
