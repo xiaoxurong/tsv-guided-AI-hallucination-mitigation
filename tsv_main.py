@@ -7,7 +7,7 @@ from tqdm import tqdm
 import numpy as np
 import argparse
 import random
-from train_utils import get_last_non_padded_token_rep, compute_ot_loss_cos, update_centroids_ema, update_centroids_ema_hard, get_ex_data, collate_fn, 
+from train_utils import get_last_non_padded_token_rep, compute_ot_loss_cos, update_centroids_ema, update_centroids_ema_hard, get_ex_data, collate_fn
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from llm_layers import LlamaDecoderLayerWrapper, add_tsv_layers
 from llm_layers import get_layers
