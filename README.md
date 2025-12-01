@@ -14,69 +14,25 @@ This project extends the Truthfulness Separator Vector (TSV) framework (Park et 
 
 While the original TSV paper focuses on identifying hallucinations by analyzing the separation between "Truthful" and "Hallucinated" prototypes in the latent space, this project leverages those learned prototypes to actively steer the model's hidden states toward truthfulness during generation.
 
-### Key Features
-
-Plug-and-Play Mitigation: No fine-tuning required; works via PyTorch forward hooks (or tensorflow).
-
-Three Steering Strategies:
-
-Prototype Interpolation: Blends hidden states with the truthful centroid.
-
-Adaptive Mitigation: Scales intervention based on real-time hallucination confidence.
-
-Prototype-Aware Projection: Pushes away from hallucination while pulling toward truth.
-
-Supported Models: LLaMA-3.1, Qwen-2.5, GPT-2 (for testing).
-
-## Installation
-
-### Clone the repository:
-
-git clone 
-
-cd 
 
 
-### Create the environment:
+📂 Repository Structure
 
-conda create -n tsv_mitigation python=3.10 -y
+This project is designed to be modular. The core logic resides in mitigation.py, while execution scripts handle the pipeline.
 
-conda activate tsv_mitigation
+.
+├── eval_mitigation.py  # PRIMARY SCRIPT: Runs TruthfulQA, applies mitigation, and saves results.
 
+├── main.py             # TEST SCRIPT: A simple sanity check to run one prompt and verify hooks.
 
-### Install dependencies:
+├── mitigation.py       # CORE LOGIC: Contains the `TSVMitigator` class and the 3 steering strategies.
 
-Install PyTorch (adjust for CUDA version)
+├── package_vectors.pu            # 🔧 UTILITIES: Handles loading the `.pt` vectors (or generating mock data using utils.py).
 
-conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
+├── README.md           # 📄 DOCS: This file.
 
-Install Hugging Face & utilities
+└── tsv_vectors_layer_X.pt  # 📦 DATA: (External) The saved vectors from the Detection team.
 
-pip install transformers accelerate scipy numpy
-
-
-## Usage
-
-1. Get the Vectors
-
-This repository requires trained TSV vectors (tsv_vectors_layer_X.pt file).
-
-If we want to test the pipeline immediately, the code will automatically generate Mock Data (Random Noise) if no file is provided.
-
-2. Run the Mitigator
-
-The main entry point is main.py, which can configure the model and layer ID directly in the script.
-
-python main.py
-
-
-3. Configuration (main.py)
-
-Edit the top section of main.py to change models or intervention strength:
-
-MODEL_NAME = "meta-llama/Llama-3.2-1B"  # or "gpt2" for CPU testing
-LAYER_ID = 12                           # The layer to attach the hook
-TSV_PATH = "tsv_vectors_layer_12.pt"    # Path to real vectors
 
 
 ## Methodology
@@ -120,37 +76,6 @@ Explicitly pushes the representation away from the Hallucinated Prototype ($\mu_
 $$h_{l}^{\prime} = h_{l} + \alpha(\mu_{T} - \mu_{H})$$
 
 Use case: Strongest intervention for correcting severe hallucinations.
-
-## Repository Structure
-
-.
-
-├── eval_mitigation.py  # RIMARY SCRIPT: Runs TruthfulQA, applies mitigation, and saves results.
-
-├── main.py             # TEST SCRIPT: A simple sanity check to run one prompt and verify hooks.
-
-├── mitigation.py       # CORE LOGIC: Contains the `TSVMitigator` class and the 3 steering strategies.
-
-├── utils.py            # UTILITIES: Handles loading the `.pt` vectors (or generating mock data).
-
-├── README.md           # DOCS: This file.
-
-└── tsv_vectors_layer_X.pt  # DATA: (External) The saved vectors from the Detection team.
-
-
-## Integration with Detection Module
-
-This repository is the Mitigation component of the project. It relies on the Detection component (separate repo) to provide the learned vectors.
-
-Handshake Protocol:
-The detection training script must export a dictionary with the following keys:
-
-{
-    "layer_idx": int,          # Layer where TSV was trained
-    "mu_T": torch.Tensor,      # Truthful Centroid
-    "mu_H": torch.Tensor,      # Hallucination Centroid
-    "direction": torch.Tensor  # The steering vector
-}
 
 
 ## References
