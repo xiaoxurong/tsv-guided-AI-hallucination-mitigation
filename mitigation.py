@@ -1,7 +1,7 @@
 import torch
 
 class TSVMitigator:
-    def __init__(self, model, layer_id, tsv_data, device='cuda'):
+    def __init__(self, model, layer_id, tsv_data, device='cpu'):
         self.model = model
         self.layer_id = layer_id
         self.device = device

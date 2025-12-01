@@ -10,9 +10,11 @@ from utils import load_real_tsv_data, get_mock_tsv_data
 
 # --- CONFIGURATION (Edit these defaults directly) ---
 DEFAULT_MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
+DEFAULT_MODEL_NAME = "gpt2"
 DEFAULT_TSV_PATH = "tsv_vectors_layer_9.pt"
 DEFAULT_LAYER_ID = 9
-DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEFAULT_DEVICE = "cpu"
+#"mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu"),  
 DEFAULT_MITIGATION_METHOD = 'projection' # Options: 'projection', 'interpolation', 'adaptive'
 DEFAULT_ALPHA = 0.1 # Strength for projection/adaptive
 DEFAULT_BETA = 0.2  # Strength for interpolation

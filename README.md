@@ -12,6 +12,7 @@ While the original TSV paper focuses on identifying hallucinations by analyzing 
 
 ## QUICK RUN
 python main.py --num_samples 5
+python score_result.py
 
 ## Repository Structure
 
