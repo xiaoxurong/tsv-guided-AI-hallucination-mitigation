@@ -4,10 +4,6 @@ Course: CS 762: Advanced Deep Learning
 
 (University of Wisconsin-Madison)
 
-## To-do and questions:
-
-In the original paper, the steering vector is inserted at layer 9 by default. They create a tsv for every layer initially but only train one specific layer at a time (-str_layer). But the detection calculate the centroids using the final layer. This would be find for detection, but if we are implement the prototype interpolation at later 9, we might need layer 9 prototype? We might want to save the prototype from the same layer where we are doing the steering?
-
 ## Overview
 
 This project extends the Truthfulness Separator Vector (TSV) framework (Park et al., 2025) from a passive detection mechanism into an active inference-time mitigation strategy.
@@ -21,15 +17,18 @@ While the original TSV paper focuses on identifying hallucinations by analyzing 
 This project is designed to be modular. The core logic resides in mitigation.py, while execution scripts handle the pipeline.
 
 .
-├── eval_mitigation.py  # PRIMARY SCRIPT: Runs TruthfulQA, applies mitigation, and saves results.
 
-├── main.py             # TEST SCRIPT: A simple sanity check to run one prompt and verify hooks.
+├── main.py            # PRIMARY SCRIPT: Runs TruthfulQA, applies mitigation, and saves results.
 
 ├── mitigation.py       # CORE LOGIC: Contains the `TSVMitigator` class and the 3 steering strategies.
 
-├── package_vectors.pu            # 🔧 UTILITIES: Handles loading the `.pt` vectors (or generating mock data using utils.py).
+├── package_vectors.pu            # UTILITIES: Handles loading the `.pt` vectors.
 
 ├── README.md           # 📄 DOCS: This file.
+
+├── score_result.py      # EVALUATION: Score the result from mitigation.
+
+├── utils.py   #  UTILITIES: Generate mock data for testing
 
 └── tsv_vectors_layer_X.pt  # 📦 DATA: (External) The saved vectors from the Detection team.
 
@@ -57,7 +56,6 @@ Linearly interpolates the current hidden state with the learned Truthful Prototy
 
 $$h_{l}^{\prime} = (1-\beta)h_{l} + \beta\mu_{T}$$
 
-Use case: Gentle guidance when the model is slightly off-track.
 
 Method 2: Adaptive Mitigation
 
@@ -66,7 +64,6 @@ Scales the intervention strength based on a dynamic Hallucination Confidence Sco
 
 $$h_{l}^{\prime} = h_{l} + c \cdot \alpha \cdot v_{TSV}$$
 
-Use case: Only intervenes when the model is likely hallucinating.
 
 Method 3: Prototype-Aware Projection
 
@@ -75,7 +72,6 @@ Explicitly pushes the representation away from the Hallucinated Prototype ($\mu_
 
 $$h_{l}^{\prime} = h_{l} + \alpha(\mu_{T} - \mu_{H})$$
 
-Use case: Strongest intervention for correcting severe hallucinations.
 
 
 ## References
