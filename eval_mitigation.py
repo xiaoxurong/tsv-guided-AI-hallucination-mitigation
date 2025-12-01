@@ -7,9 +7,9 @@ from mitigation import TSVMitigator
 from utils import load_real_tsv_data, get_mock_tsv_data
 
 # --- CONFIGURATION ---
-MODEL_NAME = "meta-llama/Llama-3.2-1B"  # Use the same model detention used
-TSV_PATH = "tsv_vectors_layer_12.pt"    # The file 
-LAYER_ID = 12                           # Must match the layer they trained on
+MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct" # Ensure this matches what we are using
+TSV_PATH = "tsv_vectors_layer_9.pt"             # <--- UPDATED FILE NAME
+LAYER_ID = 9                                    # <--- UPDATED LAYER ID
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 def run_evaluation():
@@ -23,7 +23,7 @@ def run_evaluation():
         tsv_data = load_real_tsv_data(TSV_PATH)
         print("Loaded REAL TSV vectors.")
     except FileNotFoundError:
-        print("⚠️ TSV file not found. Using MOCK data for testing.")
+        print("TSV file not found. Using MOCK data for testing.")
         tsv_data = get_mock_tsv_data(model.config.hidden_size)
 
     # 3. Initialize Mitigator
@@ -51,7 +51,7 @@ def run_evaluation():
         ans_base = tokenizer.decode(outputs_base[0], skip_special_tokens=True)
 
         # --- MITIGATION (Prototype Projection) ---
-        # You can change mode to 'interpolation' or 'adaptive' here
+        # We can change mode to 'interpolation' or 'adaptive' here
         mitigator.attach(mode='projection', alpha=2.0) 
         with torch.no_grad():
             outputs_mitigated = model.generate(**inputs, max_new_tokens=50, do_sample=False)

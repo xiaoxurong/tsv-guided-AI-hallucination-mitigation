@@ -7,7 +7,7 @@ class TSVMitigator:
         self.device = device
         self.hook_handle = None
         
-        # --- LOADING THE VECTORS (Your friend's variables) ---
+        # --- LOADING THE VECTORS  ---
         # We use 'self.' to store them so they persist inside the class
         self.mu_T = tsv_data['mu_T'].to(device)   
         self.mu_H = tsv_data['mu_H'].to(device)
@@ -23,7 +23,7 @@ class TSVMitigator:
 
     def mitigation_hook(self, alpha=0.1, beta=0.2, mode='projection'):
         def hook(module, input, output):
-            # This is the dynamic 'h_l' from your friend's code
+            # This is the dynamic 'h_l' 
             h_l = output[0] 
             
             # Ensure types match
@@ -32,19 +32,17 @@ class TSVMitigator:
             mu_H = self.mu_H.to(dtype)
             tsv = self.tsv_vec.to(dtype)
             
-            # --- YOUR FRIEND'S MATH LOGIC GOES HERE ---
-            
             if mode == 'interpolation':
-                # Friend's Method 1: Prototype Interpolation [cite: 35-36]
+                # Method 1: Prototype Interpolation [cite: 35-36]
                 adjusted_representation = (1 - beta) * h_l + beta * mu_T
                 
             elif mode == 'adaptive':
-                # Friend's Method 2: Adaptive Mitigation [cite: 38-39]
+                # Method 2: Adaptive Mitigation [cite: 38-39]
                 confidence_score = self._get_confidence_score(h_l).to(dtype)
                 adjusted_representation = h_l + confidence_score * alpha * tsv
                 
             elif mode == 'projection':
-                # Friend's Method 3: Prototype-Aware Projection [cite: 40-41]
+                #  Method 3: Prototype-Aware Projection [cite: 40-41]
                 adjusted_representation = h_l + alpha * (mu_T - mu_H)
                 
             else:
