@@ -134,12 +134,12 @@ def train_model(model, optimizer, device, prompts, labels, args):
                     # Calls the function that includes: OT_loss + lambda_rep * (mu_T^T * mu_H)^2
                     loss, similarities = compute_ot_and_repulsion_loss(
                         last_token_rep, centroids, batch_labels_oh, args
-                    )
+                        )
                 elif args.loss_type == 'original':
                     # Calls the function for the original MLE objective (Eq. 5)
                     loss, similarities = compute_ot_loss_cos(
                         last_token_rep, centroids, batch_labels_oh, args
-                    )
+                    )   
                 else:
                     raise ValueError(f"Unknown loss type: {args.loss_type}. Must be 'original' or 'repulsion'.")
                 
