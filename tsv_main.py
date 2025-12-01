@@ -7,7 +7,7 @@ from tqdm import tqdm
 import numpy as np
 import argparse
 import random
-from train_utils import get_last_non_padded_token_rep, compute_ot_loss_cos, update_centroids_ema, update_centroids_ema_hard, get_ex_data, collate_fn, compute_ot_and_repulsion_loss
+from train_utils import get_last_non_padded_token_rep, compute_ot_loss_cos, update_centroids_ema, update_centroids_ema_hard, get_ex_data, collate_fn, 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from llm_layers import LlamaDecoderLayerWrapper, add_tsv_layers
 from llm_layers import get_layers
@@ -33,7 +33,10 @@ def train_model(model, optimizer, device, prompts, labels, args):
     model.to(device)
     
     layer_number = -1
-    dir_name = f"TSV_{args.model_name}_{args.dataset_name}/exemplar_num_{args.num_exemplars}_num_selected_data_{args.num_selected_data}/{args.component}/{args.str_layer}/{args.lam}"
+
+    # dir_name = f"TSV_{args.model_name}_{args.dataset_name}/exemplar_num_{args.num_exemplars}_num_selected_data_{args.num_selected_data}/{args.component}/{args.str_layer}/{args.lam}"
+    # Modified Line: Insert 'loss_{args.loss_type}' before the component/layer info
+    dir_name = f"TSV_{args.model_name}_{args.dataset_name}/exemplar_num_{args.num_exemplars}_num_selected_data_{args.num_selected_data}/loss_{args.loss_type}/{args.component}/{args.str_layer}/{args.lam}"
     log_dir = f"{dir_name}/"
     log_file = os.path.join(log_dir, f"log.txt")
     os.makedirs(dir_name,exist_ok=True)
