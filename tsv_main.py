@@ -7,8 +7,7 @@ import numpy as np
 import argparse
 from train_utils import get_last_non_padded_token_rep, compute_ot_loss_cos, update_centroids_ema, update_centroids_ema_hard, get_ex_data, collate_fn
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from llm_layers import LlamaDecoderLayerWrapper, add_tsv_layers
-from llm_layers import get_layers
+from llm_layers import add_tsv_layers
 from sklearn.metrics import roc_auc_score
 from torch.cuda.amp import autocast, GradScaler
 import torch.nn.functional as F
@@ -31,15 +30,12 @@ def seed_everything(seed: int):
 
 
 def train_model(model, optimizer, device, prompts, labels, args):
-    model.to(device)
     
     layer_number = -1
-    dir_name = f"/home/xrong8/TSV/TSV_{args.model_name}_{args.dataset_name}/exemplar_num_{args.num_exemplars}_num_selected_data_{args.num_selected_data}/{args.component}/{args.str_layer}/{args.lam}"
-    log_dir = f"{dir_name}/"
+    dir_name = f"TSV_{args.model_name}_{args.dataset_name}/exemplar_num_{args.num_exemplars}_num_selected_data_{args.num_selected_data}/{args.component}/{args.str_layer}/{args.lam}"
+    log_dir = f"/{dir_name}/"
     log_file = os.path.join(log_dir, f"log.txt")
     os.makedirs(dir_name,exist_ok=True)
-
-    print(f"Logging to {log_file}")
     
     logging.basicConfig(
     filename=log_file,
@@ -58,7 +54,7 @@ def train_model(model, optimizer, device, prompts, labels, args):
     losses = []
     best_test_auroc = -1
 
-    scaler = torch.amp.GradScaler("cpu")
+    scaler = GradScaler()
 
     num_exemplars = args.num_exemplars
 
@@ -68,12 +64,12 @@ def train_model(model, optimizer, device, prompts, labels, args):
     
     ex_hallu = (num_exemplars-exemplar_labels[:num_exemplars].sum())/num_exemplars
     ex_true = (exemplar_labels[:num_exemplars].sum())/num_exemplars
-    cls_dist = torch.tensor([ex_hallu,ex_true]).float().to(device)
+    cls_dist = torch.tensor([ex_hallu,ex_true]).float().cuda()
     cls_dist = cls_dist.view(-1, 1) 
     sinkhorn = SinkhornKnopp_imb(args, cls_dist)
    
     # Initialize Centroids
-    centroids = torch.randn((2, model.config.hidden_size)).half().to(device)
+    centroids = torch.randn((2, model.config.hidden_size)).half().cuda() 
     centroids = F.normalize(centroids, p=2, dim=1)   
     
     exemplar_prompts_, exemplar_labels_ = exemplar_prompts, exemplar_labels    
@@ -101,7 +97,7 @@ def train_model(model, optimizer, device, prompts, labels, args):
             attention_mask = attention_mask.to(batch_prompts.device)
             
             # Forward pass
-            with torch.amp.autocast("cpu", dtype=torch.float16):
+            with autocast(dtype=torch.float16):
                 
                 output = model(batch_prompts.squeeze(), attention_mask=attention_mask.squeeze(),  output_hidden_states=True)
                 
@@ -173,16 +169,16 @@ def train_model(model, optimizer, device, prompts, labels, args):
         num_samples = len(selected_indices) + args.num_exemplars
         
     num_epochs = args.aug_num_epochs
-
-    exemplar_label = torch.tensor(exemplar_labels()).to(device)
+    
+    exemplar_label = torch.tensor(exemplar_labels).cuda()     
 
     selected_prompts = [train_prompts[i] for i in selected_indices] 
     selected_labels = selected_labels_soft
     
     augmented_prompts = selected_prompts + exemplar_prompts_
     exemplar_labels = torch.nn.functional.one_hot(exemplar_label.to(torch.int64), num_classes=2)
-    augmented_labels = torch.concat((selected_labels, exemplar_labels.clone().to(device)))
-
+    augmented_labels = torch.concat((selected_labels, torch.tensor(exemplar_labels).clone().cuda()))
+    
     augmented_prompts_train = augmented_prompts
     augmented_labels_label = augmented_labels
     
@@ -218,6 +214,7 @@ def train_model(model, optimizer, device, prompts, labels, args):
 
                 # Use attention mask to ignore padding tokens, and get the last non-padded token's representation
                 last_token_rep = get_last_non_padded_token_rep(last_layer_hidden_state, attention_mask.squeeze())  # Shape: [batch_size, hidden_size]
+
                 
                 ot_loss, similarities = compute_ot_loss_cos(last_token_rep, centroids, batch_labels, batch_size, args)
                 
@@ -263,49 +260,12 @@ def train_model(model, optimizer, device, prompts, labels, args):
             f"Train Loss: {epoch_loss:.4f}, ")
            
             logging.info(f"Best test AUROC: {best_test_auroc:.4f}, at epoch: {best_test_epoch}")
-        
-        # ===============================
-        # SAVE TRAINED CENTROIDS + TSV
-        # ===============================
-        save_dir = os.path.join(dir_name, "saved_vectors")
-        os.makedirs(save_dir, exist_ok=True)
-
-        # ---- Save centroids (2 x hidden_dim) ----
-        centroids_cpu = centroids.detach().cpu().float()
-        np.save(os.path.join(save_dir, "centroid_hallu.npy"), centroids_cpu[0].numpy())
-        np.save(os.path.join(save_dir, "centroid_true.npy"),  centroids_cpu[1].numpy())
-        print(f"[Saved] Centroids saved to {save_dir}")
-
-        # ---- Save TSV (only the trained layer: args.str_layer) ----
-        # The model only trains tsv[str_layer], others stay zero
-        trained_tsv = None
-        # find TSV inside model by searching wrapped layer
-        if hasattr(model, "model"):  # LlamaForCausalLM model wrapping
-            layers = get_layers(model)
-            layer = layers[args.str_layer]
-            # For res-connection, TSV is inside LlamaDecoderLayerWrapper
-            if isinstance(layer, LlamaDecoderLayerWrapper):
-                trained_tsv = layer.tsv_layer.tsv
-            else:
-                # for mlp/attn component
-                try:
-                    trained_tsv = layer.mlp[-1].tsv  # if component='mlp'
-                except:
-                    trained_tsv = layer.self_attn[-1].tsv  # if component='attn'
-
-        if trained_tsv is not None:
-            tsv_vector = trained_tsv.detach().cpu().float().numpy()
-            np.save(os.path.join(save_dir,
-                f"tsv_layer_{args.str_layer}.npy"), tsv_vector)
-            print(f"[Saved] TSV vector for layer {args.str_layer} saved to {save_dir}")
-        else:
-            print("[Warning] TSV not found in model. Nothing saved.")
             
         return best_test_auroc
 
 
 def test_model(model, centroids, test_prompts, test_labels, device, batch_size, layer_number):
-    model.eval().to(device) 
+    model.eval() 
     val_predictions = []
     val_labels_combined = []
  
@@ -422,19 +382,18 @@ def main():
     if args.gene:
 
         tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, token = '')
-        tokenizer.pad_token = tokenizer.eos_token
         model = AutoModelForCausalLM.from_pretrained(model_name_or_path, low_cpu_mem_usage=True, torch_dtype=torch.float16, device_map="auto", token = '')
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = model.to(torch.float16).to(device)
+        device = torch.device("cuda")
         all_decoded_answers = []
         begin_index = 0
         end_index = len(dataset)
         
-        if not os.path.exists(f'/home/xrong8/TSV/save_for_eval/{args.dataset_name}_hal_det/'):
-            os.makedirs(f'/home/xrong8/TSV/save_for_eval/{args.dataset_name}_hal_det/', exist_ok=True)
+        if not os.path.exists(f'./save_for_eval/{args.dataset_name}_hal_det/'):
+            os.mkdir(f'./save_for_eval/{args.dataset_name}_hal_det/')
 
-        if not os.path.exists(f'/home/xrong8/TSV/save_for_eval/{args.dataset_name}_hal_det/answers'):
-            os.mkdir(f'/home/xrong8/TSV/save_for_eval/{args.dataset_name}_hal_det/answers')
+        if not os.path.exists(f'./save_for_eval/{args.dataset_name}_hal_det/answers'):
+            os.mkdir(f'./save_for_eval/{args.dataset_name}_hal_det/answers')
+
         period_token_id = [tokenizer(_)['input_ids'][-1] for _ in ['\n']]
         period_token_id += [tokenizer.eos_token_id]
         
@@ -443,19 +402,11 @@ def main():
             answers_ = [None] * args.num_gene
             
             question = dataset[i]['question']
-            # prompt = tokenizer(f"Answer the question concisely. Q: {question}" + " A:", return_tensors='pt').input_ids.to(device)
-            enc = tokenizer(
-                f"Answer the question concisely. Q: {question} A:",
-                return_tensors="pt",
-                padding=True,
-            )
-            prompt = enc["input_ids"].to(device)
-            attention_mask = enc["attention_mask"].to(device)
-
+            prompt = tokenizer(f"Answer the question concisely. Q: {question}" + " A:", return_tensors='pt').input_ids.cuda()
+            
             for gen_iter in range(args.num_gene):
                 if args.most_likely:
                     generated = model.generate(prompt,
-                                               attention_mask=attention_mask,
                                                 num_beams=5,
                                                 num_return_sequences=1,
                                                 do_sample=False,
@@ -561,9 +512,8 @@ def main():
             
     elif args.generate_gt:
         from bleurt_pytorch import BleurtForSequenceClassification, BleurtTokenizer
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        model = BleurtForSequenceClassification.from_pretrained('lucadiliello/BLEURT-20').to(device)
+        model = BleurtForSequenceClassification.from_pretrained('lucadiliello/BLEURT-20').cuda()
         tokenizer = BleurtTokenizer.from_pretrained('lucadiliello/BLEURT-20')
         model.eval()
         
@@ -585,11 +535,11 @@ def main():
                 # answers = np.load(
                 #     f'./save_for_eval/{args.dataset_name}_hal_det/answers/most_likely_hal_det_{args.model_name}_{args.dataset_name}_answers_index_{i}.npy')
                 answers = np.load(
-                    f'/home/xrong8/TSV/save_for_eval/{args.dataset_name}_hal_det/answers/most_likely_hal_det_{args.model_name}_{args.dataset_name}_answers_index_{i}.npy')
+                    f'./save_for_eval/{args.dataset_name}_hal_det/answers/most_likely_hal_det_{args.model_name}_{args.dataset_name}_answers_index_{i}.npy')
 
             else:
                 answers = np.load(
-                    f'/home/xrong8/TSV/save_for_eval/{args.dataset_name}_hal_det/answers/batch_generations_hal_det_{args.model_name}_{args.dataset_name}_answers_index_{i}.npy')
+                    f'./save_for_eval/{args.dataset_name}_hal_det/answers/batch_generations_hal_det_{args.model_name}_{args.dataset_name}_answers_index_{i}.npy')
                     
             # get the gt.
             predictions = answers
@@ -599,7 +549,7 @@ def main():
                     inputs = tokenizer(predictions.tolist(), [all_answers[anw]] * len(predictions),
                                         padding='longest', return_tensors='pt')
                     for key in list(inputs.keys()):
-                        inputs[key] = inputs[key].to(device)
+                        inputs[key] = inputs[key].cuda()
                     res = np.asarray(model(**inputs).logits.flatten().tolist())
                     all_results[anw] = res
             gts = np.concatenate([gts, np.max(all_results, axis=0)], 0)
@@ -608,26 +558,18 @@ def main():
         
         if args.most_likely:
             # np.save(f'./ml_{args.dataset_name}_bleurt_score.npy', gts)
-            np.save(f'/home/xrong8/TSV/ml_{args.dataset_name}_bleurt_score.npy', gts)
+            np.save(f'./ml_{args.dataset_name}_bleurt_score.npy', gts)
             
         else:
-            np.save(f'/home/xrong8/TSV/bg_{args.dataset_name}_bleurt_score.npy', gts)
+            np.save(f'./bg_{args.dataset_name}_bleurt_score.npy', gts)
     
 
                 
     else:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#        model = AutoModelForCausalLM.from_pretrained(model_name_or_path, low_cpu_mem_usage=True, torch_dtype=torch.float16, device_map="auto", token = '')
-#        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, token = '')
-        model = AutoModelForCausalLM.from_pretrained(
-        model_name_or_path,
-        low_cpu_mem_usage=True,
-        torch_dtype=torch.float16,
-        device_map="auto",
-        )
-
-        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-
+        
+        device = torch.device("cuda")
+        model = AutoModelForCausalLM.from_pretrained(model_name_or_path, low_cpu_mem_usage=True, torch_dtype=torch.float16, device_map="auto", token = '')
+        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, token = '')
         
         prompts = []
         qa_pairs = []
@@ -643,14 +585,14 @@ def main():
                 categories.append(dataset[i]['category'])
             
             answers = np.load(
-                f'/home/xrong8/TSV/save_for_eval/{args.dataset_name}_hal_det/answers/most_likely_hal_det_{args.model_name}_{args.dataset_name}_answers_index_{i}.npy')
+                f'./save_for_eval/{args.dataset_name}_hal_det/answers/most_likely_hal_det_{args.model_name}_{args.dataset_name}_answers_index_{i}.npy')
             
      
             for anw in answers:
 
                 prompt = tokenizer(
                     f"Answer the question concisely. Q: {question}" + " A:" + anw,
-                    return_tensors='pt').input_ids.to(device)
+                    return_tensors='pt').input_ids.cuda()
                    
                 prompts.append(prompt)    
                 qa_pairs.append({'Question': question, 'Answer': anw})
@@ -674,9 +616,9 @@ def main():
         
         # wild_q_indices = index[:int(args.wild_ratio * length)]
         
-        index = np.load(f'/home/xrong8/TSV/data_indices/data_index_{args.dataset_name}.npy')
+        index = np.load(f'data_indices/data_index_{args.dataset_name}.npy')
         
-        exemplar_index = np.load(f'/home/xrong8/TSV/data_indices/exemplar_idx_{args.dataset_name}.npy')
+        exemplar_index = np.load(f'data_indices/exemplar_idx_{args.dataset_name}.npy')
         
         wild_q_indices = index[:int(args.wild_ratio * length)]
     
@@ -732,5 +674,4 @@ def main():
 
 if __name__ == '__main__':
     seed_everything(42)
-
     main()

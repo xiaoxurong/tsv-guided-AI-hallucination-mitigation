@@ -1,55 +1,83 @@
-# TSV
+# TSV-Guided Inference-Time Mitigation of Hallucinations in LLMs
 
-This project is an extension based on the ICML 2025 paper: [Steer LLM Latents for Hallucination Detection](https://arxiv.org/abs/2503.01917) by Seongheon Park, Xuefeng Du, Min-Hsuan Yeh, Haobo Wang, and Yixuan Li
+Course: CS 762: Advanced Deep Learning 
 
-The majority of the code were adapted from the source code of the paper mentioned above. See the source code here: (https://github.com/deeplearning-wisc/tsv.git)
+(University of Wisconsin-Madison)
 
----
+## Overview
 
-# Our innovation
-The curren project is an extension of the TSV paper. As the TSV showed outstanding performance on detecting hallucinated answers from LLMs, we propose that the TSV can be used to guide hallucination mitigation. 
+This project extends the Truthfulness Separator Vector (TSV) framework (Park et al., 2025) from a passive detection mechanism into an active inference-time mitigation strategy.
 
-Besides, we modify the classification objective function to make make the two distributions (truthful and hallucinated) to be as far as possible so that it can handle edge cases better. 
+While the original TSV paper focuses on identifying hallucinations by analyzing the separation between "Truthful" and "Hallucinated" prototypes in the latent space, this project leverages those learned prototypes to actively steer the model's hidden states toward truthfulness during generation.
+
+## QUICK RUN
+python main.py --num_samples 5
+python score_result.py
+
+## Repository Structure
+
+This project is designed to be modular. The core logic resides in mitigation.py, while execution scripts handle the pipeline.
+
+.
+
+├── main.py            # PRIMARY SCRIPT: Runs TruthfulQA, applies mitigation, and saves results.
+
+├── mitigation.py       # CORE LOGIC: Contains the `TSVMitigator` class and the 3 steering strategies.
+
+├── package_vectors.pu            # UTILITIES: Handles loading the `.pt` vectors.
+
+├── README.md           #  DOCS: This file.
+
+├── score_result.py      # EVALUATION: Score the result from mitigation.
+
+├── utils.py   #  UTILITIES: Generate mock data for testing
+
+└── tsv_vectors_layer_X.pt  #  DATA: (External) The saved vectors from the Detection team.
 
 
-## Requirements
 
-```bash
-conda env create -f tsv.yml
-```
----
+## Methodology
+### Detection
+We implement a new lost equation with the repulsion loss:
 
-## LLM response generation
+$$L_{total} = L_{original} + \lambda (\mu_T \cdot \mu_H)^2$$
 
-Generate responses for each question to construct an unlabeled QA dataset in the wild.
+Thid can force the vectors to be orthogonal or opposite, make the prototype $\mu_T$ and $\mu_H$ to be as far apart as possible.
 
-```bash
-bash gen.sh
-```
+This code should be in the tsv_main.py and save a final coordinates to tsv_vector.pt. 
 
----
+### Mitigation
+The mitigation.pt could read the tsv_vector.pt. 
 
-## GT generation
+We implement three distinct strategies to modify the hidden state $h_l$ at layer $l$:
 
-Generate [BLEURT](https://arxiv.org/abs/2004.04696) score for each QA pair
+Method 1: Prototype Interpolation 
+
+Linearly interpolates the current hidden state with the learned Truthful Prototype ($\mu_T$).
 
 
-```bash
-bash gt.sh
-```
+$$h_{l}^{\prime} = (1-\beta)h_{l} + \beta\mu_{T}$$
 
----
 
-## Train TSV
+Method 2: Adaptive Mitigation
 
-Train TSV for hallucination detection.
+Scales the intervention strength based on a dynamic Hallucination Confidence Score ($c$) computed by a linear probe.
 
-```bash
-bash train.sh
-```
 
----
+$$h_{l}^{\prime} = h_{l} + c \cdot \alpha \cdot v_{TSV}$$
 
-## Acknowledgement
 
-We gratefully acknowledge [TSV](https://arxiv.org/abs/2503.01917), [ITI](https://arxiv.org/abs/2306.03341), and [ICV](https://arxiv.org/abs/2311.06668) for their inspiring ideas and open-source contributions, which served as valuable foundations for this work.
+Method 3: Prototype-Aware Projection
+
+Explicitly pushes the representation away from the Hallucinated Prototype ($\mu_H$) and toward $\mu_T$.
+
+
+$$h_{l}^{\prime} = h_{l} + \alpha(\mu_{T} - \mu_{H})$$
+
+
+
+## References
+
+Original TSV Paper: Park, S., et al. (2025). Steer LLM Latents for Hallucination Detection. arXiv:2503.01917
+
+Inference-Time Intervention: Li, K., et al. (2024). Inference-Time Intervention: Eliciting Truthful Answers from a Language Model. arXiv:2306.03341
