@@ -1,5 +1,7 @@
+import argparse 
 import torch
 import json
+import os
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_dataset
@@ -83,7 +85,7 @@ def main():
     results = []
 
     # 5. Inference Loop
-    print("⚡ Generating responses...")
+    print("Generating responses...")
     for item in tqdm(dataset):
         question = item['question']
         prompt = f"Q: {question}\nA:"

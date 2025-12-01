@@ -33,16 +33,16 @@ class TSVMitigator:
             tsv = self.tsv_vec.to(dtype)
             
             if mode == 'interpolation':
-                # Method 1: Prototype Interpolation [cite: 35-36]
+                # Method 1: Prototype Interpolation
                 adjusted_representation = (1 - beta) * h_l + beta * mu_T
                 
             elif mode == 'adaptive':
-                # Method 2: Adaptive Mitigation [cite: 38-39]
+                # Method 2: Adaptive Mitigation
                 confidence_score = self._get_confidence_score(h_l).to(dtype)
                 adjusted_representation = h_l + confidence_score * alpha * tsv
                 
             elif mode == 'projection':
-                #  Method 3: Prototype-Aware Projection [cite: 40-41]
+                #  Method 3: Prototype-Aware Projection 
                 adjusted_representation = h_l + alpha * (mu_T - mu_H)
                 
             else:
@@ -52,7 +52,8 @@ class TSVMitigator:
             
         return hook
 
-    def attach(self, alpha=0.5, beta=0.2, mode='projection'):
+    def attach(self, alpha=0.1, beta=0.2, mode='projection'):
+        print(f"Attaching Hook to Layer {self.layer_id} | Mode: {mode}")
         layer = self.model.model.layers[self.layer_id]
         self.hook_handle = layer.register_forward_hook(
             self.mitigation_hook(alpha, beta, mode)
@@ -61,3 +62,4 @@ class TSVMitigator:
     def detach(self):
         if self.hook_handle:
             self.hook_handle.remove()
+            self.hook_handle = None

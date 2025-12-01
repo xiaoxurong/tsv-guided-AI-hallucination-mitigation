@@ -10,9 +10,10 @@ This project extends the Truthfulness Separator Vector (TSV) framework (Park et 
 
 While the original TSV paper focuses on identifying hallucinations by analyzing the separation between "Truthful" and "Hallucinated" prototypes in the latent space, this project leverages those learned prototypes to actively steer the model's hidden states toward truthfulness during generation.
 
+## QUICK RUN
+python main.py --num_samples 5
 
-
-📂 Repository Structure
+## Repository Structure
 
 This project is designed to be modular. The core logic resides in mitigation.py, while execution scripts handle the pipeline.
 
