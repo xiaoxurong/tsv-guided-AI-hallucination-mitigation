@@ -220,7 +220,7 @@ def compute_ot_and_repulsion_loss(last_token_rep, centroids, pseudo_label, args)
     # Calculate the squared dot product: (mu_T^T * mu_H)^2
     squared_dot_product = dot_product.pow(2)
 
-    repulsion_loss = args.lam * squared_dot_product
+    repulsion_loss = args.lambda_repulsion * squared_dot_product
     total_loss = ot_loss + repulsion_loss
 
     return total_loss, similarities

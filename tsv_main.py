@@ -415,6 +415,8 @@ def main():
     parser.add_argument("--optimizer", type=str, default='AdamW')
     parser.add_argument("--num_iters_sk", type=int, default=3)
     parser.add_argument("--epsilon_sk", type=float, default=0.05)
+    parser.add_argument("--lambda_repulsion", type=float, default=0.1, 
+                    help='Scaling factor for the Prototype Repulsion Term (lambda_rep in the paper).')
    
     
     args = parser.parse_args()
