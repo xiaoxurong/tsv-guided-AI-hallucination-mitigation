@@ -208,11 +208,11 @@ def train_model(model, optimizer, device, prompts, labels, args):
     
     # NOTE: Using autocast outside the loop for the entire SS phase
     with autocast(dtype=torch.float16):                   
-        for epoch in range(args.num_epochs): # Assuming args.num_epochs is the SS number of epochs
+        for epoch in range(args.aug_num_epochs): # Assuming args.num_epochs is the SS number of epochs
             running_loss = 0.0
             total = 0
             
-            for batch_start in tqdm(range(0, num_samples, batch_size), desc=f"SS Epoch {epoch+1}/{args.num_epochs} Batches", leave=False):
+            for batch_start in tqdm(range(0, num_samples, batch_size), desc=f"SS Epoch {epoch+1}/{args.aug_num_epochs} Batches", leave=False):
                
                 batch_prompts = augmented_prompts_train[batch_start: batch_start + batch_size]
                 batch_labels = augmented_labels_label[batch_start: batch_start + batch_size]
@@ -264,7 +264,7 @@ def train_model(model, optimizer, device, prompts, labels, args):
 
                    test_auroc = roc_auc_score(test_labels_combined.cpu().numpy(), test_predictions.cpu().numpy())
                    
-            print(f"SS Epoch [{epoch+1}/{args.num_epochs}], Loss: {epoch_loss:.4f}")
+            print(f"SS Epoch [{epoch+1}/{args.aug_num_epochs}], Loss: {epoch_loss:.4f}")
 
             losses.append(epoch_loss)
         
@@ -281,7 +281,7 @@ def train_model(model, optimizer, device, prompts, labels, args):
                 logging.info(f"Best test AUROC: {best_test_auroc:.4f}, at epoch: {best_test_epoch}")
                   
             logging.info(
-            f"SS Epoch [{epoch+1}/{args.num_epochs}], "
+            f"SS Epoch [{epoch+1}/{args.aug_num_epochs}], "
             f"Train Loss: {epoch_loss:.4f}, ")
            
             logging.info(f"Test AUROC: {test_auroc:.4f}")
