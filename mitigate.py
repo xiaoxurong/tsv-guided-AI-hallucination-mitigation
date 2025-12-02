@@ -101,8 +101,8 @@ def main():
     tsv = np.load("./tsv_info/tsv_layer_31.npy")
     centroid_true = np.load("./tsv_info/centroid_true.npy")
     centroid_hallu = np.load("./tsv_info/centroid_hallu.npy")
-    beta = 0.8
-    alpha = 150
+    beta = 0.2
+    alpha = 0.2
 
     layer_9_info = torch.load("./tsv_info/tsv_vectors_layer_9.pt")
 
