@@ -114,7 +114,7 @@ def get_ex_data(model, prompts, labels, batch_size, centroids, sinkhorn,
     return selected_indices, selected_labels_soft
 
 
-def compute_ot_loss_cos(last_token_rep, centroids, pseudo_label, batch_size, args):
+def compute_ot_loss_cos(last_token_rep, centroids, pseudo_label, args):
     
     # make sure both tensors are float32 for matmul
     last_token_rep = F.normalize(last_token_rep.float(), p=2, dim=-1)
