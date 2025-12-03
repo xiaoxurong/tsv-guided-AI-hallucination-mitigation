@@ -16,6 +16,7 @@ from torch.cuda.amp import autocast, GradScaler
 import torch.nn.functional as F
 from sinkhorn_knopp import SinkhornKnopp_imb
 import logging
+import wandb
 
 
 def seed_everything(seed: int):
@@ -30,6 +31,11 @@ def seed_everything(seed: int):
 
 
 def train_model(model, optimizer, device, prompts, labels, args):
+    wandb.init(
+        project="tsv-mitigation", # Customize your project name
+        name=f"{args.model_name}_{args.dataset_name}_L{args.str_layer}_{args.loss_type}",
+        config=vars(args) # Logs all command-line arguments as hyperparameters
+    )
     model.to(device)
     layer_number = -1
 
@@ -129,6 +135,7 @@ def train_model(model, optimizer, device, prompts, labels, args):
                 scaler.update()
                 optimizer.zero_grad()
                 running_loss += loss.item() * batch_labels.size(0)
+                wandb.log({"exemplar_phase/batch_loss": loss.item()})
         # Epoch summary
         epoch_loss = running_loss / total
 
@@ -136,6 +143,13 @@ def train_model(model, optimizer, device, prompts, labels, args):
             test_labels_ = test_labels
             test_predictions, test_labels_combined = test_model(model, centroids, test_prompts, test_labels_, device, batch_size, layer_number)
             test_auroc = roc_auc_score(test_labels_combined.cpu().numpy(), test_predictions.cpu().numpy())
+
+            wandb.log({
+                "exemplar_phase/epoch": epoch + 1,
+                "exemplar_phase/epoch_loss": epoch_loss,
+                "exemplar_phase/test_auroc": test_auroc
+            })
+
             print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}")
             logging.info(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}")
             losses.append(epoch_loss)
@@ -155,6 +169,10 @@ def train_model(model, optimizer, device, prompts, labels, args):
             logging.info(f"Test AUROC: {test_auroc:.4f}")
             print(f"Epoch [{epoch+1}/{num_epochs}],Test AUROC: {test_auroc:.4f}")
     logging.info(f"SS Learning Starts")
+
+    wandb.log({"phase_transition": True, "current_phase": "Semi-Supervised"})
+
+
     with torch.no_grad():
         selected_indices, selected_labels_soft = get_ex_data(model, train_prompts, train_labels, batch_size, centroids, sinkhorn, args.num_selected_data, cls_dist, args)
         num_samples = len(selected_indices) + args.num_exemplars
@@ -210,6 +228,7 @@ def train_model(model, optimizer, device, prompts, labels, args):
                 optimizer.zero_grad()
                 # Accumulate the loss
                 running_loss += loss.item() * batch_labels.size(0)
+                wandb.log({"semi_supervised_phase/batch_loss": loss.item()}) 
 
             epoch_loss = running_loss / total # Normalize loss by total samples
             with torch.no_grad():
@@ -218,6 +237,11 @@ def train_model(model, optimizer, device, prompts, labels, args):
                 if epoch % 1 ==0:
                     test_predictions, test_labels_combined = test_model(model, centroids, test_prompts, test_labels_, device, batch_size, layer_number)
                     test_auroc = roc_auc_score(test_labels_combined, test_predictions)
+            wandb.log({
+                "semi_supervised_phase/epoch": epoch + 1,
+                "semi_supervised_phase/epoch_loss": epoch_loss,
+                "semi_supervised_phase/test_auroc": test_auroc
+            })
             print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}")
 
             losses.append(epoch_loss)
@@ -227,10 +251,16 @@ def train_model(model, optimizer, device, prompts, labels, args):
                 #best_epoch = epoch + 1 # Storing epoch in 1-based index
                 print(f"Best test AUROC: {best_test_auroc:.4f}, at epoch: {best_test_epoch}")
                 logging.info(f"Best test AUROC: {best_test_auroc:.4f}, at epoch: {best_test_epoch}")
+                wandb.log({
+                    "best/best_test_auroc": best_test_auroc,
+                    "best/best_epoch": best_test_epoch
+                })
             logging.info(
             f"Epoch [{epoch+1}/{num_epochs}], "
             f"Train Loss: {epoch_loss:.4f}, ")
             logging.info(f"Best test AUROC: {best_test_auroc:.4f}, at epoch: {best_test_epoch}")
+
+            
             # ===============================
             # SAVE TRAINED CENTROIDS + TSV
             # ===============================
