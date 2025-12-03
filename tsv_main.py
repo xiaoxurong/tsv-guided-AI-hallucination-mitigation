@@ -118,7 +118,7 @@ def train_model(model, optimizer, device, prompts, labels, args):
                 
                 batch_labels_oh = torch.nn.functional.one_hot(batch_labels, num_classes=2) # num_classes should be 2, not -1
                 
-                ot_loss, similarities = compute_ot_loss_cos(last_token_rep, centroids, batch_labels_oh, batch_size, args)
+                ot_loss, similarities = compute_ot_loss_cos(last_token_rep, centroids, batch_labels_oh, args)
                 
                 loss = ot_loss 
                 
