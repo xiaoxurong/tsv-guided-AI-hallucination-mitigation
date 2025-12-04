@@ -8,6 +8,34 @@ from typing import Optional, Tuple
 from cache_utils import Cache
 from transformers.activations import ACT2FN
 
+class LlamaAttentionWrapper(nn.Module):
+    """
+    Custom wrapper for the LlamaAttention module to inject TSV.
+    This wrapper maintains the original function signature by accepting *args and **kwargs,
+    passing them to the original module, and applying the TSV to the resulting hidden_states
+    (the first element of the attention output tuple).
+    """
+    def __init__(self, original_attn, tsv_layer):
+        super().__init__()
+        self.original_attn = original_attn
+        self.tsv = tsv_layer
+
+    def forward(self, *args, **kwargs):
+        # 1. Call original attention block with all arguments
+        # This preserves the required keyword arguments (like hidden_states, attention_mask, etc.)
+        attn_out = self.original_attn(*args, **kwargs)
+
+        # 2. attn_out is a tuple: (hidden_states, past_key_value, ...)
+        # Apply TSV only to the hidden_states (the first element, index 0)
+        original_hidden_states = attn_out[0]
+        new_hidden_states = self.tsv(original_hidden_states)
+        
+        # 3. Reconstruct the output tuple with the modified hidden states
+        new_attn_out = list(attn_out)
+        new_attn_out[0] = new_hidden_states
+        
+        return tuple(new_attn_out)
+
 class LlamaDecoderLayerWrapper(nn.Module):
     def __init__(self, llama_decoder_layer, tsv_layer):
         super().__init__()
@@ -192,7 +220,7 @@ def add_tsv_layers(model: PreTrainedModel, tsv: Tensor, alpha: list, args):
         for i, layer in enumerate(layers):
             if i == args.str_layer:
                 original_attn = find_module(layer, attn_keywords)
-                layer.self_attn = nn.Sequential(original_attn, TSVLayer(tsv[i], alpha)) 
+                layer.self_attn = LlamaAttentionWrapper(original_attn, TSVLayer(tsv[i], alpha))
                 
     elif args.component == 'res':
         for i, layer in enumerate(layers):
