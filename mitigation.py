@@ -63,3 +63,11 @@ class TSVMitigator:
         if self.hook_handle:
             self.hook_handle.remove()
             self.hook_handle = None
+
+    #A T4-GPU only supports up to ~15GB of VRAM
+    #Therefore, it's often not possible to define two separate models that are both on CUDA.
+    #Instead, using the hook directly on the forward pass is more GPU cost efficient (no need to define new model)
+    def forward(self):
+      self.attach()
+      model(*args, **kwargs)
+      self.detach()

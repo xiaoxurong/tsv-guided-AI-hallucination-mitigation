@@ -12,6 +12,8 @@ import argparse
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, AutoConfig
 
+from mitigation_wrapper import Mitigation_Wrapper
+
 import sys
 sys.path.append('../')
 import llama
@@ -21,17 +23,15 @@ from evaluation import alt_tqa_evaluate
 from interveners import wrapper, Collector, ITI_Intervener
 import pyvene as pv
 
-from mitigation import TSVMitigator
-
 
 #ARGUMENTS, MODEL/JUDGE CHOICES:
 
 # --- CONFIGURATION (Edit these defaults directly) ---
-DEFAULT_MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
-DEFAULT_MODEL_NAME = "gpt2"
+# DEFAULT_MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
+DEFAULT_MODEL_NAME = "llama_7B" #we can change this back, just for testing.
 DEFAULT_TSV_PATH = "tsv_vectors_layer_9.pt"
 DEFAULT_LAYER_ID = 9
-DEFAULT_DEVICE = "cpu"
+DEFAULT_DEVICE = 0
 #"mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu"),  
 DEFAULT_MITIGATION_METHOD = 'projection' # Options: 'projection', 'interpolation', 'adaptive'
 DEFAULT_ALPHA = 0.1 # Strength for projection/adaptive
@@ -69,19 +69,14 @@ HF_NAMES = {
 }
 
 def parse_args():
-  parser = argparse.ArgumentParser()
-  parser.add_argument('--model_name', type=str, default='llama_7B', choices=HF_NAMES.keys(), help='model name')
+  parser = argparse.ArgumentParser(description="TSV Mitigation Evaluation Runner")
+  parser.add_argument('--model_name', type=str, default=DEFAULT_MODEL_NAME, choices=HF_NAMES.keys(), help='HuggingFace model name')
   parser.add_argument('--model_prefix', type=str, default='', help='prefix to model name')
-  parser.add_argument('--alpha', type=float, default=15, help='alpha, intervention strength')
   parser.add_argument('--device', type=int, default=0, help='device')
   parser.add_argument('--seed', type=int, default=42, help='seed')
   parser.add_argument('--judge_name', type=str, required=False)
   parser.add_argument('--info_name', type=str, required=False)
-  parser.add_argument('--instruction_prompt', default='default', help='instruction prompt for truthfulqa benchmarking, "default" or "informative"', type=str, required=False)
-  parser = argparse.ArgumentParser(description="TSV Mitigation Evaluation Runner")
   # Model Config
-  parser.add_argument("--model_name", type=str, default=DEFAULT_MODEL_NAME, help="HuggingFace model name")
-  parser.add_argument("--device", type=str, default=DEFAULT_DEVICE)
   # Mitigation Config (The knobs you want to turn)
   parser.add_argument("--layer_id", type=int, default=DEFAULT_LAYER_ID, help="Layer to hook (must match training)")
   parser.add_argument("--tsv_path", type=str, default=DEFAULT_TSV_PATH, help="Path to the .pt vector file")
@@ -93,11 +88,9 @@ def parse_args():
   parser.add_argument("--num_samples", type=int, default=None, help="How many samples to run (None = all)")
   parser.add_argument("--output_file", type=str, default="mitigation_results.json", help="Where to save the JSON output")
   parser.add_argument("--max_new_tokens", type=int, default=50, help="Number of tokens to generate per answer")
+  parser.add_argument('--instruction_prompt', default='default', help='instruction prompt for truthfulqa benchmarking, "default" or "informative"', type=str, required=False)
 
   return parser.parse_args()
-
-
-  args = parser.parse_args()
 
 def main(): 
 
@@ -117,31 +110,26 @@ def main():
             tokenizer.pad_token = tokenizer.eos_token
     default_model.generation_config.pad_token_id = tokenizer.pad_token_id
 
-
-    mitigation_model = AutoModelForCausalLM.from_pretrained(model_name_or_path, torch_dtype=torch.float16, trust_remote_code=True)
-    mitigation_model.to("cuda")
-    if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-    mitigation_model.generation_config.pad_token_id = tokenizer.pad_token_id
-
     #load TruthfulQA Dataset:
     df = pd.read_csv('./TruthfulQA/TruthfulQA.csv')
-
+    df = df[:5]
     #Load in TSV and Centroids
     tsv = np.load("./tsv_info/tsv_layer_31.npy")
     centroid_true = np.load("./tsv_info/centroid_true.npy")
     centroid_hallu = np.load("./tsv_info/centroid_hallu.npy")
     layer_9_info = torch.load("./tsv_info/tsv_vectors_layer_9.pt")
-    tsv_data = [tsv, centroid_true, centroid_hallu]
+    tsv_data = {"direction": torch.tensor(tsv, dtype=torch.float32), "mu_T": torch.tensor(centroid_true, dtype=torch.float32), "mu_H": torch.tensor(centroid_hallu, dtype=torch.float32)}
 
-    #Directly mitigating model.
-    mitigator = TSVMitigator(mitigation_model, args.layer_id, tsv_data, device=args.device)
-    mitigator.attach(mode=args.mode, alpha=args.alpha, beta=args.beta)
-   
-    filename = f'{args.model_prefix}{args.model_name}_seed_{args.seed}_top_{args.num_heads}_heads_alpha_{int(args.alpha)}_fold_{i}'                                
-    
+    #Directly attaching the hook.
+
+    mitigated_model = Mitigation_Wrapper(default_model, args.layer_id, tsv_data, args.device, args.alpha, args.beta, args.mode)
+            
+    filename = f'{args.model_prefix}{args.model_name}_results'                                
+    df.to_csv(f"results/truthful_df.csv", index=False)
+
+    print("Mitigated Model")
     results = alt_tqa_evaluate(
-        models={args.model_name: mitigation_model},
+        models={args.model_name: mitigated_model},
         metric_names=['judge', 'info', 'mc'],
         input_path=f'results/truthful_df.csv',
         output_path=f'results/answer_dump_{filename}.csv',
