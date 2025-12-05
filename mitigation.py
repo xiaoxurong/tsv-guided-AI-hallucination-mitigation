@@ -24,7 +24,8 @@ class TSVMitigator:
     def mitigation_hook(self, alpha=0.1, beta=0.2, mode='projection'):
         def hook(module, input, output):
             # This is the dynamic 'h_l' 
-            h_l = output[0] 
+            h_l = output[:, -1, :] 
+            original_representation = output[:, :-1, :]
             
             # Ensure types match
             dtype = h_l.dtype
@@ -48,12 +49,14 @@ class TSVMitigator:
             else:
                 adjusted_representation = h_l
 
-            return (adjusted_representation,) + output[1:]
+            adjusted_representation = adjusted_representation.unsqueeze(1)
+        
+            return torch.cat((original_representation, adjusted_representation), dim=1)
             
         return hook
 
     def attach(self, alpha=0.1, beta=0.2, mode='projection'):
-        print(f"Attaching Hook to Layer {self.layer_id} | Mode: {mode}")
+        # print(f"Attaching Hook to Layer {self.layer_id} | Mode: {mode}")
         layer = self.model.model.layers[self.layer_id]
         self.hook_handle = layer.register_forward_hook(
             self.mitigation_hook(alpha, beta, mode)
@@ -64,10 +67,3 @@ class TSVMitigator:
             self.hook_handle.remove()
             self.hook_handle = None
 
-    #A T4-GPU only supports up to ~15GB of VRAM
-    #Therefore, it's often not possible to define two separate models that are both on CUDA.
-    #Instead, using the hook directly on the forward pass is more GPU cost efficient (no need to define new model)
-    def forward(self):
-      self.attach()
-      model(*args, **kwargs)
-      self.detach()

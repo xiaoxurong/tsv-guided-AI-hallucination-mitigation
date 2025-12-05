@@ -17,10 +17,13 @@ class Mitigation_Wrapper(nn.Module):
     def forward(self, *args, **kwargs):
         self.mitigator.attach(mode=self.mode, alpha=self.alpha, beta=self.beta)        
         try:
-            return self.model(*args, **kwargs)  
+            return self.model.forward(*args, **kwargs)  
         finally:
             self.mitigator.detach()        
 
-    #allows us to call self.model.generate
     def generate(self, *args, **kwargs):
-        self.model.generate(*args, **kwargs)
+        self.mitigator.attach(mode=self.mode, alpha=self.alpha, beta=self.beta)        
+        try:
+            return self.model.generate(*args, **kwargs)  
+        finally:
+            self.mitigator.detach()        

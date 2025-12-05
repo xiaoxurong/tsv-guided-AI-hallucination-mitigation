@@ -112,14 +112,13 @@ def main():
 
     #load TruthfulQA Dataset:
     df = pd.read_csv('./TruthfulQA/TruthfulQA.csv')
-    df = df[:5]
     #Load in TSV and Centroids
     tsv = np.load("./tsv_info/tsv_layer_31.npy")
     centroid_true = np.load("./tsv_info/centroid_true.npy")
     centroid_hallu = np.load("./tsv_info/centroid_hallu.npy")
     layer_9_info = torch.load("./tsv_info/tsv_vectors_layer_9.pt")
-    tsv_data = {"direction": torch.tensor(tsv, dtype=torch.float32), "mu_T": torch.tensor(centroid_true, dtype=torch.float32), "mu_H": torch.tensor(centroid_hallu, dtype=torch.float32)}
-
+    # tsv_data = {"direction": torch.tensor(tsv, dtype=torch.float32), "mu_T": torch.tensor(centroid_true, dtype=torch.float32), "mu_H": torch.tensor(centroid_hallu, dtype=torch.float32)}
+    tsv_data = layer_9_info
     #Directly attaching the hook.
 
     mitigated_model = Mitigation_Wrapper(default_model, args.layer_id, tsv_data, args.device, args.alpha, args.beta, args.mode)
@@ -132,8 +131,8 @@ def main():
         models={args.model_name: mitigated_model},
         metric_names=['judge', 'info', 'mc'],
         input_path=f'results/truthful_df.csv',
-        output_path=f'results/answer_dump_{filename}.csv',
-        summary_path=f'results/summary_dump_{filename}.csv',
+        output_path=f'results/{args.mode}/answer_dump_{filename}_{args.mode}.csv',
+        summary_path=f'results/{args.mode}/summary_dump_{filename}_{args.mode}.csv',
         device="cuda", 
         interventions=None, 
         intervention_fn=None, 
