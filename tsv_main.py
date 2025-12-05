@@ -283,12 +283,18 @@ def train_model(model, optimizer, device, prompts, labels, args):
         # For res-connection, TSV is inside LlamaDecoderLayerWrapper
         if isinstance(layer, LlamaDecoderLayerWrapper):
             trained_tsv = layer.tsv_layer.tsv
-        else:
-            # for mlp/attn component
-            try:
-                trained_tsv = layer.mlp[-1].tsv # if component='mlp'
-            except:
-                trained_tsv = layer.self_attn[-1].tsv # if component='attn'
+        elif args.component == 'res' or args.component == 'mlp':
+            tsv_layer_module = layer.mlp[1]
+            trained_tsv = tsv_layer_module.tsv
+        elif args.component == 'attn':
+            tsv_layer_module = layer.self_attn.tsv
+            trained_tsv = tsv_layer_module.tsv
+        # else:
+        #     # for mlp/attn component
+        #     try:
+        #         trained_tsv = layer.mlp[-1].tsv # if component='mlp'
+        #     except:
+        #         trained_tsv = layer.self_attn[-1].tsv # if component='attn'
 
     if trained_tsv is not None:
         tsv_vector = trained_tsv.detach().cpu().float().numpy()
