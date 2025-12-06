@@ -308,7 +308,7 @@ def run_kl_wrt_orig(model_key, model=None, tokenizer=None, device='cuda', interv
                 orig_logits = orig_model(input_ids.to('cuda'))
                 orig_logits = orig_logits.logits.cpu().type(torch.float32)
             else: 
-                orig_logits = model(input_ids)
+                orig_logits = orig_model(input_ids)
                 orig_logits = orig_logits.logits.cpu().type(torch.float32)
                 
             orig_probs = F.softmax(orig_logits, dim=-1)
@@ -321,7 +321,7 @@ def run_kl_wrt_orig(model_key, model=None, tokenizer=None, device='cuda', interv
             # Add epsilon to avoid division by zero
             probs = probs.clamp(min=epsilon)
             orig_probs = orig_probs.clamp(min=epsilon)            
-            kl_div = ((orig_probs * (orig_probs / probs).log()).sum()).mean()
+            kl_div = ((orig_probs * (orig_probs.log() - probs.log())).sum(-1)).mean()
             kl_divs.append(kl_div.item())
 
     return np.mean(kl_divs)
@@ -406,7 +406,7 @@ def tqa_run_probs(frame, engine, tag, preset, model=None, tokenizer=None, verbos
                     answer_length = prompt_ids.shape[-1] - input_ids.shape[-1]
                     if answer_length <= 0:
                       continue
-                    outputs = outputs[-answer_length:]
+                    outputs = outputs[-answer_length-1:-1]
                     prompt_ids = prompt_ids[0, -answer_length:]
 
                     # get logprobs for each token in the answer
@@ -445,7 +445,7 @@ def tqa_run_probs(frame, engine, tag, preset, model=None, tokenizer=None, verbos
                     answer_length = prompt_ids.shape[-1] - input_ids.shape[-1]
                     if answer_length <= 0:
                       continue
-                    outputs = outputs[-answer_length:]
+                    outputs = outputs[-answer_length-1:-1]
                     prompt_ids = prompt_ids[0, -answer_length:]
 
                     # get logprobs for each token in the answer
