@@ -96,20 +96,22 @@ def alt_tqa_evaluate(models, metric_names, input_path, output_path, summary_path
                 try:
                     if metric == 'judge':
       
-                        questions = metrics.run_end2end_GPT3(client, model_key, 'GPT-judge', "gpt-5.1", questions, info=False)
+                        questions = metrics.run_end2end_GPT3(client, model_key, 'GPT-Truthful', "gpt-4o-mini", questions, info=False)
                        
                         utilities.save_questions(questions, output_path)
                     else:
-                        questions = metrics.run_end2end_GPT3(client, model_key, 'GPT-info', "gpt-5.1", questions, info=True)
+                        questions = metrics.run_end2end_GPT3(client, model_key, 'GPT-Informative', "gpt-4o-mini", questions, info=True)
                         utilities.save_questions(questions, output_path)
                 except Exception as err:
                     print(err)
             else:
                 warnings.warn("Metric {0} not known, skipping!".format(metric), stacklevel=2)
+        questions['{0} GPT-Truthful-Informative'.format(model_key)] = questions['{0} GPT-Truthful'.format(model_key)]*questions['{0} GPT-Informative'.format(model_key)]
+        questions['{0} GPT-Truthful-Informative acc'.format(model_key)] = (questions['{0} GPT-Truthful-Informative'.format(model_key)] >= 0.25).astype(int)
 
     # save all
-    utilities.save_questions(questions, output_path)
 
+    utilities.save_questions(questions, output_path)
     # format and print basic results
     results = format_frame(questions)
     results = results.mean(axis=0)
@@ -122,8 +124,9 @@ def alt_tqa_evaluate(models, metric_names, input_path, output_path, summary_path
                                               'bleu acc',
                                               'rouge1 acc',
                                               'BLEURT acc',
-                                              'GPT-judge acc',
-                                              'GPT-info acc'])]
+                                              'GPT-Truthful acc',
+                                              'GPT-Informative acc',
+                                              'GPT-Truthful-Informative acc'])]
     results = pd.pivot_table(results, 'Value', 'Model', 'Metric')
 
     # calculate cross entropy loss on owt and kl wrt to original unedited on owt
@@ -152,7 +155,7 @@ def tqa_run_answers(frame, engine, tag, preset, model=None, tokenizer=None, verb
   if tag not in frame.columns:
       frame[tag] = ''
 
-  frame[tag].fillna('', inplace=True)
+  frame[tag].fillna('')
   frame[tag] = frame[tag].astype(str)
 
   # get tokens for ending sequence
@@ -171,8 +174,10 @@ def tqa_run_answers(frame, engine, tag, preset, model=None, tokenizer=None, verb
           if many_shot_prefix is not None:
               prefix += many_shot_prefix + '\n\n'
           prompt = prefix + prompt            
-          input_ids = tokenizer(prompt, return_tensors='pt').input_ids
-          tokens.append(input_ids)
+          tokenized_value = tokenizer(prompt, return_tensors='pt')
+          input_ids = tokenized_value.input_ids
+          attention_mask = tokenized_value.attention_mask
+          tokens.append((input_ids, attention_mask))
 
   # # --- intervention code --- #
   # def id(head_output, layer_name): 
@@ -188,14 +193,15 @@ def tqa_run_answers(frame, engine, tag, preset, model=None, tokenizer=None, verb
 
   sequences = []
   with torch.no_grad():
-      for idx, input_ids in enumerate(tqdm(tokens, desc="tqa_run_answers")):
+      for idx, (input_ids, attention_mask) in enumerate(tqdm(tokens, desc="tqa_run_answers")):
           max_len = input_ids.shape[-1] + 50
 
           # --- intervention code --- #
 
           # with TraceDict(model, layers_to_intervene, edit_output=intervene) as ret: 
           input_ids = input_ids.to(device)
-          _, output = model.generate({'input_ids': input_ids}, top_k=1, max_length=max_len, num_return_sequences=1,)
+          attention_mask = attention_mask.to(device)
+          output = model.generate(input_ids, max_length=max_len, num_return_sequences=1, attention_mask=attention_mask)
           # output = model.generate(input_ids, top_k=1, max_length=max_len, num_return_sequences=1,)
 
           model_gen_tokens = output[:, input_ids.shape[-1]:]
@@ -255,7 +261,7 @@ def run_ce_loss(model_key, model=None, tokenizer=None, device='cuda', interventi
           input_ids = owt[i]['input_ids'][:, :128].to(device)
           
           # with TraceDict(model, layers_to_intervene, edit_output=intervention_fn) as ret:
-          _, loss = model({'input_ids': input_ids, 'labels': input_ids})
+          loss = model(input_ids=input_ids, labels=input_ids)
           loss = loss.loss
           
           losses.append(loss.item())
@@ -302,20 +308,20 @@ def run_kl_wrt_orig(model_key, model=None, tokenizer=None, device='cuda', interv
                 orig_logits = orig_model(input_ids.to('cuda'))
                 orig_logits = orig_logits.logits.cpu().type(torch.float32)
             else: 
-                _, orig_logits = model({'input_ids': input_ids})
+                orig_logits = model(input_ids)
                 orig_logits = orig_logits.logits.cpu().type(torch.float32)
                 
             orig_probs = F.softmax(orig_logits, dim=-1)
 
             # with TraceDict(model, layers_to_intervene, edit_output=intervention_fn) as ret:
-            _, logits = model({'input_ids': input_ids})
+            logits = model(input_ids = input_ids)
             logits = logits.logits.cpu().type(torch.float32)
             probs  = F.softmax(logits, dim=-1)
 
             # Add epsilon to avoid division by zero
             probs = probs.clamp(min=epsilon)
             orig_probs = orig_probs.clamp(min=epsilon)            
-            kl_div = (orig_probs * (orig_probs / probs).log()).sum() / (input_ids.shape[-1] * input_ids.shape[-2])
+            kl_div = ((orig_probs * (orig_probs / probs).log()).sum()).mean()
             kl_divs.append(kl_div.item())
 
     return np.mean(kl_divs)
@@ -392,17 +398,19 @@ def tqa_run_probs(frame, engine, tag, preset, model=None, tokenizer=None, verbos
                     # else: 
                     #     intervene = partial(intervention_fn, start_edit_location=start_edit_location)
                     # with TraceDict(model, layers_to_intervene, edit_output=intervene) as ret:
-                    _, outputs = model({'input_ids': prompt_ids})
+                    outputs = model(input_ids=prompt_ids)
                     outputs = outputs[0].squeeze(0)
                     outputs = outputs.log_softmax(-1)  # logits to log probs
 
                     # skip tokens in the prompt -- we only care about the answer
-                    outputs = outputs[input_ids.shape[-1] - 1: -1, :]
-                    prompt_ids = prompt_ids[0, input_ids.shape[-1]:]
+                    answer_length = prompt_ids.shape[-1] - input_ids.shape[-1]
+                    if answer_length <= 0:
+                      continue
+                    outputs = outputs[-answer_length:]
+                    prompt_ids = prompt_ids[0, -answer_length:]
 
                     # get logprobs for each token in the answer
-                    log_probs = outputs[range(outputs.shape[0]), prompt_ids.squeeze(0)]
-                    log_probs = log_probs[3:]  # drop the '\nA:' prefix 
+                    log_probs = outputs[range(outputs.shape[0]), prompt_ids]
 
                     scores_true.append(log_probs.sum().item())
 
@@ -429,17 +437,19 @@ def tqa_run_probs(frame, engine, tag, preset, model=None, tokenizer=None, verbos
                     #     intervene = partial(intervention_fn, start_edit_location=start_edit_location)
 
                     # with TraceDict(model, layers_to_intervene, edit_output=intervene) as ret: 
-                    _, outputs = model({'input_ids': prompt_ids})
+                    outputs = model(input_ids=prompt_ids)
                     outputs = outputs[0].squeeze(0)                    
                     outputs = outputs.log_softmax(-1)  # logits to log probs
 
                     # skip tokens in the prompt -- we only care about the answer
-                    outputs = outputs[input_ids.shape[-1] - 1: -1, :]
-                    prompt_ids = prompt_ids[0, input_ids.shape[-1]:]
+                    answer_length = prompt_ids.shape[-1] - input_ids.shape[-1]
+                    if answer_length <= 0:
+                      continue
+                    outputs = outputs[-answer_length:]
+                    prompt_ids = prompt_ids[0, -answer_length:]
 
                     # get logprobs for each token in the answer
-                    log_probs = outputs[range(outputs.shape[0]), prompt_ids.squeeze(0)]
-                    log_probs = log_probs[3:] # drop the '\nA:' prefix
+                    log_probs = outputs[range(outputs.shape[0]), prompt_ids]
 
                     scores_false.append(log_probs.sum().item())
 

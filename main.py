@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 import argparse
 from datasets import load_dataset
-from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, AutoConfig
+from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig
 
 from mitigation_wrapper import Mitigation_Wrapper
 
@@ -21,14 +21,15 @@ import llama
 # Specific pyvene imports
 from evaluation import alt_tqa_evaluate
 from interveners import wrapper, Collector, ITI_Intervener
-import pyvene as pv
+import pyvene as pv 
 
+from huggingface_hub import notebook_login
 
 #ARGUMENTS, MODEL/JUDGE CHOICES:
 
 # --- CONFIGURATION (Edit these defaults directly) ---
-# DEFAULT_MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
-DEFAULT_MODEL_NAME = "llama_7B" #we can change this back, just for testing.
+DEFAULT_MODEL_NAME = "llama3_8B_instruct"
+# DEFAULT_MODEL_NAME = "llama_7B" #we can change this back, just for testing.
 DEFAULT_TSV_PATH = "tsv_vectors_layer_9.pt"
 DEFAULT_LAYER_ID = 9
 DEFAULT_DEVICE = 0
@@ -95,31 +96,53 @@ def parse_args():
 def main(): 
 
     args = parse_args()
+    print("arguments:")
+    print(args.mode)
+    print(args.layer_id)
+
+    hf_token = ""
+    with open("hf_token.txt", "r") as f:
+        hf_token = f.read()
+
 
     # set seeds, set CUDA
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     model_name_or_path = HF_NAMES[args.model_prefix + args.model_name]
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, trust_remote_code=True, token=hf_token)
 
     #default_model
-    default_model = AutoModelForCausalLM.from_pretrained(model_name_or_path, torch_dtype=torch.float16, trust_remote_code=True)
-    default_model.to("cuda")
+    default_model = AutoModelForCausalLM.from_pretrained(model_name_or_path, torch_dtype=torch.float16, trust_remote_code=True, token=hf_token, device_map={"": 0})
+    # default_model.to("cuda")
     if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
     default_model.generation_config.pad_token_id = tokenizer.pad_token_id
 
+
+
+    print("model.device =", default_model.device)
+    print("hf_device_map present?", hasattr(default_model, "hf_device_map"))
+    if hasattr(default_model, "hf_device_map"):
+        # how many modules on each device?
+        from collections import Counter
+        c = Counter(default_model.hf_device_map.values())
+        print("device map counts:", c)
+
     #load TruthfulQA Dataset:
     df = pd.read_csv('./TruthfulQA/TruthfulQA.csv')
+    df = df[:5]
     #Load in TSV and Centroids
-    tsv = np.load("./tsv_info/tsv_layer_31.npy")
-    centroid_true = np.load("./tsv_info/centroid_true.npy")
-    centroid_hallu = np.load("./tsv_info/centroid_hallu.npy")
-    layer_9_info = torch.load("./tsv_info/tsv_vectors_layer_9.pt")
-    # tsv_data = {"direction": torch.tensor(tsv, dtype=torch.float32), "mu_T": torch.tensor(centroid_true, dtype=torch.float32), "mu_H": torch.tensor(centroid_hallu, dtype=torch.float32)}
-    tsv_data = layer_9_info
-    #Directly attaching the hook.
+    tsv = np.load("./tsv_info/layer_31/tsv_layer_31.npy")
+    centroid_true = np.load("./tsv_info/layer_31/centroid_true.npy")
+    centroid_hallu = np.load("./tsv_info/layer_31/centroid_hallu.npy")
+    # layer_9_info = torch.load("./tsv_info/layer_31/tsv_vectors_layer_9.pt")
+    tsv_data = {"direction": torch.tensor(tsv, dtype=torch.float32), "mu_T": torch.tensor(centroid_true, dtype=torch.float32), "mu_H": torch.tensor(centroid_hallu, dtype=torch.float32)}
+    # tsv_data = layer_9_info
+    #Directly attaching the hook
+
+    print("what device?")
+    print(default_model.device)
 
     mitigated_model = Mitigation_Wrapper(default_model, args.layer_id, tsv_data, args.device, args.alpha, args.beta, args.mode)
             
@@ -129,7 +152,7 @@ def main():
     print("Mitigated Model")
     results = alt_tqa_evaluate(
         models={args.model_name: mitigated_model},
-        metric_names=['judge', 'info', 'mc'],
+        metric_names=['judge', 'info', 'mc', 'bleu', 'bleurt'],
         input_path=f'results/truthful_df.csv',
         output_path=f'results/{args.mode}/answer_dump_{filename}_{args.mode}.csv',
         summary_path=f'results/{args.mode}/summary_dump_{filename}_{args.mode}.csv',
