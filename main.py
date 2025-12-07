@@ -12,6 +12,8 @@ import argparse
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig
 
+hf_token = os.environ.get("HF_TOKEN")
+
 from mitigation_wrapper import Mitigation_Wrapper
 
 import sys
