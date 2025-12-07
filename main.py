@@ -157,7 +157,7 @@ def main():
         metric_names=['judge', 'info', 'mc', 'bleu', 'bleurt'],
         input_path=f'results/truthful_df.csv',
         output_path=f'results/{args.mode}/answer_dump_{filename}_{args.mode}.csv',
-        summary_path=f'results/{args.mode}/summary_dump_{filename}_{args.mode}_{args.layer_id}.csv',
+        summary_path=f'results/{args.mode}/summary_dump_{filename}_{args.mode}_{args.num_samples}_{args.alpha}_{args.layer_id}.csv',
         device="cuda", 
         interventions=None, 
         intervention_fn=None, 
