@@ -16,13 +16,15 @@ logger.setLevel(logging.CRITICAL)
 
 def calculate_score(top_logprobs, desirable_choice, undesirable_choice):
     desirable_prob = 0 
-    undesirable_prob = 0.1 #this way we can avoid divide by 0 error, while keeping default to 0.
+    undesirable_prob = 0 #this way we can avoid divide by 0 error, while keeping default to 0.
     for val in top_logprobs:
       if val.token == desirable_choice or val.token == " " + desirable_choice:
         desirable_prob = np.exp(val.logprob) #convert from logprob to prob
       elif val.token == undesirable_choice or val.token == " " + undesirable_choice:
         undesirable_prob = np.exp(val.logprob)
-    
+
+    if desirable_prob == 0 and undesirable_prob == 0:
+      return 0    
     score = desirable_prob / (desirable_prob + undesirable_prob)
     return score
 
@@ -291,7 +293,7 @@ def run_BLEURT(model_key, frame, cache_dir=None):
     model_key: Column name of model answers (populate before running metrics)
     """
 
-    bleurt = evaluate.load("bleurt", cache_dir=cache_dir)
+    bleurt = evaluate.load("bleurt", cache_dir=cache_dir, device="cuda")
 
     for calc in ['max', 'diff', 'acc']:
         col_name = '{0} BLEURT {1}'.format(model_key, calc)

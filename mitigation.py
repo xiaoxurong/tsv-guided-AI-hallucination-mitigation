@@ -9,9 +9,9 @@ class TSVMitigator:
         
         # --- LOADING THE VECTORS  ---
         # We use 'self.' to store them so they persist inside the class
-        self.mu_T = tsv_data['mu_T'].to(device)   
-        self.mu_H = tsv_data['mu_H'].to(device)
-        self.tsv_vec = tsv_data['direction'].to(device) # This corresponds to 'tsv'
+        self.mu_T = tsv_data['mu_T'].to(device, dtype=torch.float16)   
+        self.mu_H = tsv_data['mu_H'].to(device, dtype=torch.float16)   
+        self.tsv_vec = tsv_data['direction'].to(device, dtype=torch.float16)    # This corresponds to 'tsv'
         self.classifier = tsv_data.get('classifier', None)
 
     def _get_confidence_score(self, h_l):
@@ -24,34 +24,34 @@ class TSVMitigator:
     def mitigation_hook(self, alpha=0.1, beta=0.2, mode='projection'):
         def hook(module, input, output):
             # This is the dynamic 'h_l' 
-            h_l = output[:, -1, :] 
-            original_representation = output[:, :-1, :]
+            with torch.no_grad():
+                h_l = output#[:, -1, :] 
+                # original_representation = output[:, :-1, :]
+                
+                # Ensure types match
+                dtype = h_l.dtype
+                mu_T = self.mu_T
+                mu_H = self.mu_H
+                tsv = self.tsv_vec
+                
+                if mode == 'interpolation':
+                    # Method 1: Prototype Interpolation
+                    adjusted_representation = (1 - beta) * h_l + beta * mu_T
+                    
+                elif mode == 'adaptive':
+                    # Method 2: Adaptive Mitigation
+                    # confidence_score = self._get_confidence_score(h_l).to(dtype)
+                    adjusted_representation = h_l + alpha * tsv
+                    
+                elif mode == 'projection':
+                    #  Method 3: Prototype-Aware Projection 
+                    adjusted_representation = h_l + alpha * (mu_T - mu_H)
+                    
+                else:
+                    adjusted_representation = h_l
             
-            # Ensure types match
-            dtype = h_l.dtype
-            mu_T = self.mu_T.to(dtype)
-            mu_H = self.mu_H.to(dtype)
-            tsv = self.tsv_vec.to(dtype)
-            
-            if mode == 'interpolation':
-                # Method 1: Prototype Interpolation
-                adjusted_representation = (1 - beta) * h_l + beta * mu_T
-                
-            elif mode == 'adaptive':
-                # Method 2: Adaptive Mitigation
-                # confidence_score = self._get_confidence_score(h_l).to(dtype)
-                adjusted_representation = h_l + alpha * tsv
-                
-            elif mode == 'projection':
-                #  Method 3: Prototype-Aware Projection 
-                adjusted_representation = h_l + alpha * (mu_T - mu_H)
-                
-            else:
-                adjusted_representation = h_l
-
-            adjusted_representation = adjusted_representation.unsqueeze(1)
-        
-            return torch.cat((original_representation, adjusted_representation), dim=1)
+                return adjusted_representation
+                # return torch.cat((original_representation, adjusted_representation), dim=1)
             
         return hook
 
