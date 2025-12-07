@@ -24,7 +24,8 @@ class TSVMitigator:
     def mitigation_hook(self, alpha=0.1, beta=0.2, mode='projection'):
         def hook(module, input, output):
             # This is the dynamic 'h_l' 
-            h_l = output[0] 
+            h_l = output[:, -1, :] 
+            original_representation = output[:, :-1, :]
             
             # Ensure types match
             dtype = h_l.dtype
@@ -39,7 +40,7 @@ class TSVMitigator:
             elif mode == 'adaptive':
                 # Method 2: Adaptive Mitigation
                 confidence_score = self._get_confidence_score(h_l).to(dtype)
-                adjusted_representation = h_l + confidence_score * alpha * tsv
+                adjusted_representation = h_l + alpha * tsv
                 
             elif mode == 'projection':
                 #  Method 3: Prototype-Aware Projection 
@@ -48,12 +49,14 @@ class TSVMitigator:
             else:
                 adjusted_representation = h_l
 
-            return (adjusted_representation,) + output[1:]
+            adjusted_representation = adjusted_representation.unsqueeze(1)
+        
+            return torch.cat((original_representation, adjusted_representation), dim=1)
             
         return hook
 
     def attach(self, alpha=0.1, beta=0.2, mode='projection'):
-        print(f"Attaching Hook to Layer {self.layer_id} | Mode: {mode}")
+        # print(f"Attaching Hook to Layer {self.layer_id} | Mode: {mode}")
         layer = self.model.model.layers[self.layer_id]
         self.hook_handle = layer.register_forward_hook(
             self.mitigation_hook(alpha, beta, mode)
@@ -63,3 +66,4 @@ class TSVMitigator:
         if self.hook_handle:
             self.hook_handle.remove()
             self.hook_handle = None
+
