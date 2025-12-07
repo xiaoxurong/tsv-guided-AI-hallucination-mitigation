@@ -133,7 +133,7 @@ def main():
 
     #load TruthfulQA Dataset:
     df = pd.read_csv('./TruthfulQA/TruthfulQA.csv')
-    # df = df[:5]
+    df = df[:100]
     #Load in TSV and Centroids
     tsv = np.load("./tsv_info/layer_31/tsv_layer_31.npy")
     centroid_true = np.load("./tsv_info/layer_31/centroid_true.npy")
