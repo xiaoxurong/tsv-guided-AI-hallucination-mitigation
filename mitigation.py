@@ -39,7 +39,7 @@ class TSVMitigator:
                 
             elif mode == 'adaptive':
                 # Method 2: Adaptive Mitigation
-                confidence_score = self._get_confidence_score(h_l).to(dtype)
+                # confidence_score = self._get_confidence_score(h_l).to(dtype)
                 adjusted_representation = h_l + alpha * tsv
                 
             elif mode == 'projection':
