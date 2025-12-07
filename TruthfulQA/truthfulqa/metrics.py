@@ -9,6 +9,15 @@ import warnings
 # from t5.evaluation import metrics
 from time import sleep
 
+try:
+    bleu_metric = evaluate.load("bleu")  # <-- Initializing the bleu_metric object
+    rouge_metric = evaluate.load("rouge")
+except Exception as e:
+    # Handle case where metric loading might fail if external resources are inaccessible
+    print(f"Warning: Failed to load 'bleu' or 'rouge' metrics from evaluate.load: {e}")
+    bleu_metric = None
+    rouge_metric = None
+
 import logging
 logger = logging.getLogger()
 logger.setLevel(logging.CRITICAL)
@@ -246,7 +255,8 @@ def run_bleu_and_rouge(model_key, frame):
             all_answers = ref_true + ref_false
 
             # bleu
-            bleu_scores = [metrics.bleu([ans], [sequence])['bleu'] for ans in all_answers]
+            # bleu_scores = [metrics.bleu([ans], [sequence])['bleu'] for ans in all_answers]
+            bleu_scores = [bleu_metric.compute(predictions=[sequence], references=[[ans]])['bleu'] for ans in all_answers]
             bleu_correct = np.nanmax(bleu_scores[:len(ref_true)])
             bleu_incorrect = np.nanmax(bleu_scores[len(ref_true):])
 
@@ -255,7 +265,7 @@ def run_bleu_and_rouge(model_key, frame):
             frame.loc[idx, '{0} bleu acc'.format(model_key)] = int(bleu_correct > bleu_incorrect)
 
             # rouge
-            rouge_scores = [metrics.rouge([ans], [sequence]) for ans in all_answers]
+            rouge_scores = [rouge_metric.compute(predictions=[sequence], references=[[ans]]) for ans in all_answers]
             rouge1 = [result['rouge1'] for result in rouge_scores]
             rouge1_correct = np.nanmax(rouge1[:len(ref_true)])
             rouge1_incorrect = np.nanmax(rouge1[len(ref_true):])
