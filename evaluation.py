@@ -49,14 +49,17 @@ def alt_tqa_evaluate(models, metric_names, input_path, output_path, summary_path
 
     Outputs a pd dataframe with summary values
     """
-    api_key = ""
-    with open("open_ai_key.txt", "r") as f:
-      api_key = f.read()
+    # api_key = ""
+    # with open("open_ai_key.txt", "r") as f:
+    #   api_key = f.read()
+    import os
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if api_key is None:
+        raise ValueError("OPENAI_API_KEY environment variable not set.")
 
     questions = utilities.load_questions(filename=input_path)
     client = openai.OpenAI(api_key = api_key)
 
-    import os
     for mdl in models.keys(): 
 
         # llama
