@@ -100,9 +100,9 @@ def main():
     print(args.mode)
     print(args.layer_id)
 
-    hf_token = ""
-    with open("hf_token.txt", "r") as f:
-        hf_token = f.read()
+    # hf_token = ""
+    # with open("hf_token.txt", "r") as f:
+    #     hf_token = f.read()
 
 
     # set seeds, set CUDA
