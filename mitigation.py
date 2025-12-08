@@ -51,19 +51,8 @@ class TSVMitigator:
                 dtype = h_l.dtype
                 mu_T = self.mu_T
                 mu_H = self.mu_H
-                tsv = self.tsv_vec
+                tsv = self.tsv_vec             
                 if mode == 'interpolation':
-                    # Method 1: Prototype Interpolation
-                    adjusted_representation = (1 - beta) * h_l + beta * mu_T
-                    
-                elif mode == 'adaptive':
-                    # Method 2: Adaptive Mitigation
-                    confidence_score = self._get_confidence_score(h_l).to(dtype)
-                    adjusted_representation = h_l + alpha * confidence_score * tsv
-                    
-                elif mode == 'projection':
-                    #  Method 3: Prototype-Aware Projection 
-                    adjusted_representation = h_l + alpha * (mu_T - mu_H)                if mode == 'interpolation':
                     # Method 1: Prototype Interpolation
                     adjusted_representation = (1 - beta) * h_l + beta * mu_T
 
