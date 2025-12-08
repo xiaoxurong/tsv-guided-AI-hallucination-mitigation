@@ -1,0 +1,2 @@
+GPT-Informative acc,GPT-Truthful acc,GPT-Truthful-Informative acc,MC1,MC2,bleu acc,rouge1 acc,CE Loss,KL wrt Orig
+0.59,0.64,0.37,0.42,0.5963324061235782,0.51,0.56,2.828055363893509,0.0033243147132452576
