@@ -75,7 +75,7 @@ def parse_args():
   parser = argparse.ArgumentParser(description="TSV Mitigation Evaluation Runner")
   parser.add_argument('--model_name', type=str, default=DEFAULT_MODEL_NAME, choices=HF_NAMES.keys(), help='HuggingFace model name')
   parser.add_argument('--model_prefix', type=str, default='', help='prefix to model name')
-  parser.add_argument('--device', type=int, default=0, help='device')
+#  parser.add_argument('--device', type=int, default=0, help='device')
   parser.add_argument('--seed', type=int, default=42, help='seed')
   parser.add_argument('--judge_name', type=str, required=False)
   parser.add_argument('--info_name', type=str, required=False)
@@ -88,7 +88,8 @@ def parse_args():
   parser.add_argument("--beta", type=float, default=DEFAULT_BETA, help="Strength for interpolation mode")
   
   # Run Config
-  parser.add_argument("--num_samples", type=int, default=None, help="How many samples to run (None = all)")
+#   parser.add_argument("--num_samples", type=int, default=None, help="How many samples to run (None = all)")
+  parser.add_argument("--full", type=str, default="false")
   parser.add_argument("--output_file", type=str, default="mitigation_results.json", help="Where to save the JSON output")
   parser.add_argument("--max_new_tokens", type=int, default=50, help="Number of tokens to generate per answer")
   parser.add_argument('--instruction_prompt', default='default', help='instruction prompt for truthfulqa benchmarking, "default" or "informative"', type=str, required=False)
@@ -133,11 +134,13 @@ def main():
 
     #load TruthfulQA Dataset:
     df = pd.read_csv('./TruthfulQA/TruthfulQA.csv')
-    df = df[:100]
+    if args.full == "false":
+        df = df.sample(frac=1).reset_index(drop=True)
+        df = df[:100]
     #Load in TSV and Centroids
-    tsv = np.load("./tsv_info/layer_31/tsv_layer_31.npy")
-    centroid_true = np.load("./tsv_info/layer_31/centroid_true.npy")
-    centroid_hallu = np.load("./tsv_info/layer_31/centroid_hallu.npy")
+    tsv = np.load(f"./tsv_info/layer_{args.layer_id}/tsv_layer_{args.layer_id}.npy")
+    centroid_true = np.load(f"./tsv_info/layer_{args.layer_id}/centroid_true.npy")
+    centroid_hallu = np.load(f"./tsv_info/layer_{args.layer_id}/centroid_hallu.npy")
     # layer_9_info = torch.load("./tsv_info/layer_31/tsv_vectors_layer_9.pt")
     tsv_data = {"direction": torch.tensor(tsv, dtype=torch.float32), "mu_T": torch.tensor(centroid_true, dtype=torch.float32), "mu_H": torch.tensor(centroid_hallu, dtype=torch.float32)}
     # tsv_data = layer_9_info
@@ -146,18 +149,20 @@ def main():
     print("what device?")
     print(default_model.device)
 
-    mitigated_model = Mitigation_Wrapper(default_model, args.layer_id, tsv_data, args.device, args.alpha, args.beta, args.mode)
-            
+    # mitigated_model = Mitigation_Wrapper(default_model, args.layer_id, tsv_data, args.device, args.alpha, args.beta, args.mode)
+    mitigated_model = Mitigation_Wrapper(default_model, args.layer_id, tsv_data, default_model.device, args.alpha, args.beta, args.mode)      
     filename = f'{args.model_prefix}{args.model_name}_results'                                
     df.to_csv(f"results/truthful_df.csv", index=False)
 
     print("Mitigated Model")
     results = alt_tqa_evaluate(
         models={args.model_name: mitigated_model},
-        metric_names=['judge', 'info', 'mc', 'bleu', 'bleurt'],
+        metric_names=['judge', 'info', 'mc', 'bleu'],
         input_path=f'results/truthful_df.csv',
-        output_path=f'results/{args.mode}/answer_dump_{filename}_{args.mode}.csv',
-        summary_path=f'results/{args.mode}/summary_dump_{filename}_{args.mode}_{args.num_samples}_{args.alpha}_{args.layer_id}.csv',
+        # output_path=f'results/{args.mode}/answer_dump_{filename}_{args.mode}.csv',
+        # summary_path=f'results/{args.mode}/summary_dump_{filename}_{args.mode}_{args.num_samples}_{args.alpha}_{args.layer_id}.csv',
+        output_path=f'results/{args.mode}/answer_dump_{filename}_{args.mode}_{args.layer_id}_full{args.full}_alpha{args.alpha}_beta{args.beta}.csv',
+        summary_path=f'results/{args.mode}/summary_dump_{filename}_{args.mode}{args.layer_id}_full{args.full}_alpha{args.alpha}_beta{args.beta}.csv',
         device="cuda", 
         interventions=None, 
         intervention_fn=None, 
