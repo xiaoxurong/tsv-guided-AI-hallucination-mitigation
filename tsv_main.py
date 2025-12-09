@@ -429,11 +429,11 @@ def main():
         begin_index = 0
         end_index = len(dataset)
         
-        if not os.path.exists(f'/home/xrong8/TSV/save_for_eval/{args.dataset_name}_hal_det/'):
-            os.makedirs(f'/home/xrong8/TSV/save_for_eval/{args.dataset_name}_hal_det/', exist_ok=True)
+        if not os.path.exists(f'./save_for_eval/{args.dataset_name}_hal_det/'):
+            os.makedirs(f'./save_for_eval/{args.dataset_name}_hal_det/', exist_ok=True)
 
-        if not os.path.exists(f'/home/xrong8/TSV/save_for_eval/{args.dataset_name}_hal_det/answers'):
-            os.mkdir(f'/home/xrong8/TSV/save_for_eval/{args.dataset_name}_hal_det/answers')
+        if not os.path.exists(f'./save_for_eval/{args.dataset_name}_hal_det/answers'):
+            os.mkdir(f'./save_for_eval/{args.dataset_name}_hal_det/answers')
         period_token_id = [tokenizer(_)['input_ids'][-1] for _ in ['\n']]
         period_token_id += [tokenizer.eos_token_id]
         
@@ -584,11 +584,11 @@ def main():
                 # answers = np.load(
                 #     f'./save_for_eval/{args.dataset_name}_hal_det/answers/most_likely_hal_det_{args.model_name}_{args.dataset_name}_answers_index_{i}.npy')
                 answers = np.load(
-                    f'/home/xrong8/TSV/save_for_eval/{args.dataset_name}_hal_det/answers/most_likely_hal_det_{args.model_name}_{args.dataset_name}_answers_index_{i}.npy')
+                    f'./save_for_eval/{args.dataset_name}_hal_det/answers/most_likely_hal_det_{args.model_name}_{args.dataset_name}_answers_index_{i}.npy')
 
             else:
                 answers = np.load(
-                    f'/home/xrong8/TSV/save_for_eval/{args.dataset_name}_hal_det/answers/batch_generations_hal_det_{args.model_name}_{args.dataset_name}_answers_index_{i}.npy')
+                    f'./save_for_eval/{args.dataset_name}_hal_det/answers/batch_generations_hal_det_{args.model_name}_{args.dataset_name}_answers_index_{i}.npy')
                     
             # get the gt.
             predictions = answers
