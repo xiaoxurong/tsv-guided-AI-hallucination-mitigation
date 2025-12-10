@@ -33,7 +33,7 @@ def train_model(model, optimizer, device, prompts, labels, args):
     
     layer_number = -1
     dir_name = f"TSV_{args.model_name}_{args.dataset_name}/exemplar_num_{args.num_exemplars}_num_selected_data_{args.num_selected_data}/{args.component}/{args.str_layer}/{args.lam}"
-    log_dir = f"/{dir_name}/"
+    log_dir = f"{dir_name}/"
     log_file = os.path.join(log_dir, f"log.txt")
     os.makedirs(dir_name,exist_ok=True)
     
