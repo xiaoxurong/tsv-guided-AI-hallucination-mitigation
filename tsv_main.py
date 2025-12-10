@@ -102,8 +102,9 @@ def train_model(model, optimizer, device, prompts, labels, args):
             batch_prompts = batch_prompts.to(device)
             batch_labels = batch_labels.to(device)
             attention_mask = attention_mask.to(batch_prompts.device)
+            attention_mask = attention_mask.to(torch.bfloat16)
             # Forward pass
-            with torch.amp.autocast("cpu", dtype=torch.float16):
+            with torch.amp.autocast("cpu", dtype=torch.bfloat16):
                 output = model(batch_prompts.squeeze(), attention_mask=attention_mask.squeeze(), output_hidden_states=True)
                 hidden_states = output.hidden_states
                 hidden_states = torch.stack(hidden_states, dim=0).squeeze()
