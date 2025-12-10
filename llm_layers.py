@@ -82,9 +82,12 @@ class AttentionWrapper(nn.Module):
             # We'll pass everything and rely on the original forward ignoring extra kwargs if it can.
             
             # A more robust fix relies on knowing the model type:
-            if 'position_embeddings' in kwargs and not hasattr(self.original_attn, 'position_embeddings'):
-                # Heuristic: If it's likely a Qwen model, drop position_embeddings
-                del attn_kwargs['position_embeddings']
+            if position_embeddings is not None and 'position_embeddings' not in attn_kwargs:
+                attn_kwargs['position_embeddings'] = position_embeddings
+            # If it wasn't passed, we must explicitly add it as None if the target module expects it.
+            # Since the traceback shows Qwen2Attention requires it, we add it back if missing.
+            elif 'position_embeddings' not in attn_kwargs:
+                attn_kwargs['position_embeddings'] = None
             
             # The common signature for `self_attn` in HuggingFace Llama/Qwen models is usually
             # output_tuple = self.original_attn(hidden_states=..., attention_mask=..., ...)
