@@ -1,25 +1,24 @@
 import os
 import torch
-
 import torch.nn as nn
 from datasets import load_dataset
 from tqdm import tqdm
 import numpy as np
 import argparse
-import random
-from train_utils import get_last_non_padded_token_rep, compute_ot_loss_cos, update_centroids_ema, update_centroids_ema_hard, get_ex_data, collate_fn, compute_ot_and_repulsion_loss
+from train_utils import get_last_non_padded_token_rep, compute_ot_loss_cos, update_centroids_ema, update_centroids_ema_hard, get_ex_data, collate_fn
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from llm_layers import LlamaDecoderLayerWrapper, add_tsv_layers
-from llm_layers import get_layers
+from llm_layers import add_tsv_layers
 from sklearn.metrics import roc_auc_score
 from torch.cuda.amp import autocast, GradScaler
 import torch.nn.functional as F
 from sinkhorn_knopp import SinkhornKnopp_imb
 import logging
-# import wandb
 
 
 def seed_everything(seed: int):
+    import random, os
+    import numpy as np
+    import torch
 
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
@@ -31,137 +30,119 @@ def seed_everything(seed: int):
 
 
 def train_model(model, optimizer, device, prompts, labels, args):
-    # wandb.init(
-    #     project="tsv-mitigation", # Customize your project name
-    #     name=f"{args.model_name}_{args.dataset_name}_L{args.str_layer}_{args.loss_type}",
-    #     config=vars(args) # Logs all command-line arguments as hyperparameters
-    # )
-    model.to(device)
+    
     layer_number = -1
-
-    # dir_name = f"TSV_{args.model_name}_{args.dataset_name}/exemplar_num_{args.num_exemplars}_num_selected_data_{args.num_selected_data}/{args.component}/{args.str_layer}/{args.lam}"
-    # Modified Line: Insert 'loss_{args.loss_type}' before the component/layer info
-    dir_name = f"TSV_{args.model_name}_{args.dataset_name}/exemplar_num_{args.num_exemplars}_num_selected_data_{args.num_selected_data}/loss_{args.loss_type}/{args.component}/{args.str_layer}/{args.lam}"
-    log_dir = f"{dir_name}/"
+    dir_name = f"TSV_{args.model_name}_{args.dataset_name}/exemplar_num_{args.num_exemplars}_num_selected_data_{args.num_selected_data}/{args.component}/{args.str_layer}/{args.lam}"
+    log_dir = f"/{dir_name}/"
     log_file = os.path.join(log_dir, f"log.txt")
     os.makedirs(dir_name,exist_ok=True)
-
-    print(f"Logging to {log_file}")
+    
     logging.basicConfig(
     filename=log_file,
     filemode="w",
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",)
+    
     logging.info("Starting training")
     logging.info(f"Training parameters: few_shot_size={args.num_exemplars}, num_selected_data={args.num_selected_data}, component={args.component}, str_layer={args.str_layer}")
+    
     test_prompts, train_prompts, exemplar_prompts = prompts[0], prompts[1], prompts[2]
-    # FIX 1: Rename the data tensor variable here to avoid conflict
-    test_labels, train_labels, exemplar_data_labels = labels[0], labels[1], labels[2]
+    test_labels, train_labels, exemplar_labels = labels[0], labels[1], labels[2]
     batch_size = args.batch_size
     num_samples = len(train_prompts)
+    
     losses = []
     best_test_auroc = -1
 
-    # Using the exact scaler initialization from your previous code
-    scaler = torch.cuda.amp.GradScaler()
+    scaler = GradScaler()
 
     num_exemplars = args.num_exemplars
 
     # Initialize Sinkhorn algorithm
     args.num_iters_sk = 3
     args.epsilon_sk = 0.05
-    # FIX 2: Use the new data tensor name
-    ex_hallu = (num_exemplars-exemplar_data_labels[:num_exemplars].sum())/num_exemplars
-    ex_true = (exemplar_data_labels[:num_exemplars].sum())/num_exemplars
-    cls_dist = torch.tensor([ex_hallu,ex_true]).float().to(device)
-    cls_dist = cls_dist.view(-1, 1)
+    
+    ex_hallu = (num_exemplars-exemplar_labels[:num_exemplars].sum())/num_exemplars
+    ex_true = (exemplar_labels[:num_exemplars].sum())/num_exemplars
+    cls_dist = torch.tensor([ex_hallu,ex_true]).float().cuda()
+    cls_dist = cls_dist.view(-1, 1) 
     sinkhorn = SinkhornKnopp_imb(args, cls_dist)
+   
     # Initialize Centroids
-    centroids = torch.randn((2, model.config.hidden_size)).half().to(device)
-    centroids = F.normalize(centroids, p=2, dim=1)
-    # FIX 3: Use the new data tensor name
-    exemplar_prompts_, exemplar_labels_ = exemplar_prompts, exemplar_data_labels
-    # FIX 4: Use the new data tensor name in collate_fn output
-    exemplar_prompts, exemplar_data_labels = collate_fn(exemplar_prompts, exemplar_data_labels)
+    centroids = torch.randn((2, model.config.hidden_size)).half().cuda() 
+    centroids = F.normalize(centroids, p=2, dim=1)   
+    
+    exemplar_prompts_, exemplar_labels_ = exemplar_prompts, exemplar_labels    
+    exemplar_prompts, exemplar_labels = collate_fn(exemplar_prompts, exemplar_labels) 
 
     num_epochs = args.init_num_epochs
+        
     for epoch in range(num_epochs):
         running_loss = 0.0
         total = 0
         all_labels = []
-        num_samples = num_exemplars
+        num_samples = num_exemplars 
 
         # Process data in batches
         for batch_start in tqdm(range(0, num_samples, batch_size), desc=f"Epoch {epoch+1}/{num_epochs} Batches", leave=False):
 
             batch_prompts = exemplar_prompts[batch_start: batch_start + batch_size]
-            # FIX 5: Use the new data tensor name here
-            batch_labels = exemplar_data_labels[batch_start: batch_start + batch_size]
+            batch_labels = exemplar_labels[batch_start: batch_start + batch_size]
+            
             # Create attention masks (1 for real tokens, 0 for padding)
-            attention_mask = (batch_prompts != 0).to(torch.long)
+            attention_mask = (batch_prompts != 0).half() 
+            
             batch_prompts = batch_prompts.to(device)
             batch_labels = batch_labels.to(device)
             attention_mask = attention_mask.to(batch_prompts.device)
-            attention_mask = attention_mask.to(torch.float16)
+            
             # Forward pass
-            with torch.amp.autocast("cuda", dtype=torch.float16):
-                output = model(batch_prompts, attention_mask=attention_mask, output_hidden_states=True)
-                # hidden_states = output.hidden_states
-                # hidden_states = torch.stack(hidden_states, dim=0).squeeze(-1)
-                last_layer_hidden_state = output.hidden_states[layer_number] # Shape: [batch_size, max_seq_len, hidden_size]
+            with autocast(dtype=torch.float16):
+                
+                output = model(batch_prompts.squeeze(), attention_mask=attention_mask.squeeze(),  output_hidden_states=True)
+                
+                hidden_states = output.hidden_states
+                
+                hidden_states = torch.stack(hidden_states, dim=0).squeeze()
+            
+                last_layer_hidden_state = hidden_states[layer_number]  # Shape: [batch_size, max_seq_len, hidden_size]
+                
                 # Use attention mask to ignore padding tokens, and get the last non-padded token's representation
-                last_token_rep = get_last_non_padded_token_rep(last_layer_hidden_state, attention_mask)
+                last_token_rep = get_last_non_padded_token_rep(last_layer_hidden_state, attention_mask.squeeze())  
+                
                 batch_labels_oh = torch.nn.functional.one_hot(batch_labels, num_classes=-1)
-                # ot_loss, similarities = compute_ot_loss_cos(last_token_rep, centroids, batch_labels_oh, batch_size, args)
-                # loss = ot_loss
-
-                if args.loss_type == 'repulsion':
-                    # Calls the function that includes: OT_loss + lambda_rep * (mu_T^T * mu_H)^2
-                    loss, similarities = compute_ot_and_repulsion_loss(
-                        last_token_rep, centroids, batch_labels_oh, args
-                    )
-                elif args.loss_type == 'original':
-                    # Calls the function for the original MLE objective (Eq. 5)
-                    loss, similarities = compute_ot_loss_cos(
-                        last_token_rep, centroids, batch_labels_oh, args
-                    )
-                else:
-                    raise ValueError(f"Unknown loss type: {args.loss_type}. Must be 'original' or 'repulsion'.")
+                
+                ot_loss, similarities = compute_ot_loss_cos(last_token_rep, centroids, batch_labels_oh, batch_size, args)
+                
+                loss = ot_loss 
+                
                 total += batch_labels.size(0)
+                
                 with torch.no_grad():
-                    centroids = update_centroids_ema_hard(centroids, last_token_rep, batch_labels_oh, args)
-                # loss.backward()
-                print("DEBUG last layer grad:", last_layer_hidden_state.requires_grad)
-                print("DEBUG last_token_rep grad:", last_token_rep.requires_grad)
-                print("DEBUG loss grad:", loss.requires_grad)
-
-                print("loss:", loss)
-                if not loss.requires_grad:
-                    # If this prints, the graph is indeed broken.
-                    print("!!! DEBUG ERROR: LOSS TENSOR DOES NOT REQUIRE GRADIENT. GRAPH IS BROKEN !!!")
-                scaler.scale(loss).backward()
-                scaler.step(optimizer)
-                scaler.update()
-                optimizer.zero_grad()
-                running_loss += loss.item() * batch_labels.size(0)
-                # wandb.log({"exemplar_phase/batch_loss": loss.item()})
+                     centroids = update_centroids_ema_hard(centroids, last_token_rep, batch_labels_oh, args)
+                    
+            # loss.backward()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad()
+            
+            running_loss += loss.item() * batch_labels.size(0) 
+          
         # Epoch summary
-        epoch_loss = running_loss / total
+        epoch_loss = running_loss / total  
 
         if (epoch+1) % 1 == 0:
+            
             test_labels_ = test_labels
             test_predictions, test_labels_combined = test_model(model, centroids, test_prompts, test_labels_, device, batch_size, layer_number)
-            test_auroc = roc_auc_score(test_labels_combined.cpu().numpy(), test_predictions.cpu().numpy())
-
-            # wandb.log({
-            #     "exemplar_phase/epoch": epoch + 1,
-            #     "exemplar_phase/epoch_loss": epoch_loss,
-            #     "exemplar_phase/test_auroc": test_auroc
-            # })
-
+            
+            test_auroc = roc_auc_score(test_labels_combined.cpu().numpy(), test_predictions.cpu().numpy())  
+            
             print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}")
             logging.info(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}")
             losses.append(epoch_loss)
+           
             # AUROC Calculation using sklearn
             test_predictions = test_predictions.cpu().numpy()
             test_labels_combined = test_labels_combined.cpu().numpy()
@@ -175,184 +156,160 @@ def train_model(model, optimizer, device, prompts, labels, args):
             logging.info(
             f"Epoch [{epoch+1}/{num_epochs}], "
             f"Train Loss: {epoch_loss:.4f}, ")
+            
             logging.info(f"Test AUROC: {test_auroc:.4f}")
-            print(f"Epoch [{epoch+1}/{num_epochs}],Test AUROC: {test_auroc:.4f}")
+            print(f"Epoch [{epoch+1}/{num_epochs}],Test AUROC: {test_auroc:.4f}")           
+    
     logging.info(f"SS Learning Starts")
-
-    # wandb.log({"phase_transition": True, "current_phase": "Semi-Supervised"})
-
-
+    
     with torch.no_grad():
+   
         selected_indices, selected_labels_soft = get_ex_data(model, train_prompts, train_labels, batch_size, centroids, sinkhorn, args.num_selected_data, cls_dist, args)
+        
         num_samples = len(selected_indices) + args.num_exemplars
-        # FIX 6: Rename the exemplar label variable to avoid conflict
-        exemplar_label = torch.tensor(exemplar_labels_).to(device)#
+        
+    num_epochs = args.aug_num_epochs
+    
+    exemplar_label = torch.tensor(exemplar_labels).cuda()     
 
-    selected_prompts = [train_prompts[i] for i in selected_indices]
+    selected_prompts = [train_prompts[i] for i in selected_indices] 
     selected_labels = selected_labels_soft
+    
     augmented_prompts = selected_prompts + exemplar_prompts_
-    # FIX: Renamed the variable from 'exemplar_labels' to 'exemplar_labels_oh'
-    exemplar_labels_oh = torch.nn.functional.one_hot(exemplar_label.to(torch.int64), num_classes=2)
-    # FIX: Use the new variable name here
-    augmented_labels = torch.concat((selected_labels, exemplar_labels_oh.clone().to(device)))
-
+    exemplar_labels = torch.nn.functional.one_hot(exemplar_label.to(torch.int64), num_classes=2)
+    augmented_labels = torch.concat((selected_labels, torch.tensor(exemplar_labels).clone().cuda()))
+    
     augmented_prompts_train = augmented_prompts
     augmented_labels_label = augmented_labels
+    
     num_samples = len(augmented_prompts_train)
-    with autocast(dtype=torch.float16):
+    
+    with autocast(dtype=torch.float16):                   
         for epoch in range(num_epochs):
             running_loss = 0.0
             total = 0
             all_labels = []
+            
             for batch_start in tqdm(range(0, num_samples, batch_size), desc=f"Epoch {epoch+1}/{num_epochs} Batches", leave=False):
+               
                 batch_prompts = augmented_prompts_train[batch_start: batch_start + batch_size]
                 batch_labels = augmented_labels_label[batch_start: batch_start + batch_size]
 
                 batch_prompts, batch_labels = collate_fn(batch_prompts, batch_labels)
 
-                attention_mask = (batch_prompts != 0).half() # Shape: [batch_size, max_seq_len]
+                attention_mask = (batch_prompts != 0).half()  # Shape: [batch_size, max_seq_len]
 
                 batch_prompts = batch_prompts.to(device)
                 batch_labels = batch_labels.to(device)
                 attention_mask = attention_mask.to(batch_prompts.device)
 
-                output = model(batch_prompts, attention_mask=attention_mask, output_hidden_states=True)
+                output = model(batch_prompts.squeeze(), attention_mask=attention_mask.squeeze(),  output_hidden_states=True)
+                
                 hidden_states = output.hidden_states
+                
                 # Stack hidden states and get the last layer's hidden state
-                hidden_states = torch.stack(hidden_states, dim=0)
-                last_layer_hidden_state = hidden_states[layer_number] # Shape: [batch_size, max_seq_len, hidden_size]
+                hidden_states = torch.stack(hidden_states, dim=0).squeeze()
+                
+                last_layer_hidden_state = hidden_states[layer_number]  # Shape: [batch_size, max_seq_len, hidden_size]
 
                 # Use attention mask to ignore padding tokens, and get the last non-padded token's representation
-                last_token_rep = get_last_non_padded_token_rep(last_layer_hidden_state, attention_mask) # Shape: [batch_size, hidden_size]
-                ot_loss, similarities = compute_ot_loss_cos(last_token_rep, centroids, batch_labels, args)
-                loss = ot_loss
+                last_token_rep = get_last_non_padded_token_rep(last_layer_hidden_state, attention_mask.squeeze())  # Shape: [batch_size, hidden_size]
+
+                
+                ot_loss, similarities = compute_ot_loss_cos(last_token_rep, centroids, batch_labels, batch_size, args)
+                
+                loss = ot_loss 
 
                 with torch.no_grad():
-                    centroids = update_centroids_ema(centroids, last_token_rep, batch_labels.half(), args)
-                    all_labels.append(batch_labels.cpu())
-                    total += batch_labels.size(0)
+                    
+                   centroids = update_centroids_ema(centroids, last_token_rep, batch_labels.half(), args)
+                   all_labels.append(batch_labels.cpu()) 
+                   total += batch_labels.size(0)
+                   
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad()
                 # Accumulate the loss
-                running_loss += loss.item() * batch_labels.size(0)
-                # wandb.log({"semi_supervised_phase/batch_loss": loss.item()}) 
+                running_loss += loss.item() * batch_labels.size(0)  
 
-            epoch_loss = running_loss / total # Normalize loss by total samples
+            epoch_loss = running_loss / total  # Normalize loss by total samples
+            
+            
             with torch.no_grad():
                 all_labels = torch.cat(all_labels).numpy()
                 test_labels_ = test_labels
+             
                 if epoch % 1 ==0:
-                    test_predictions, test_labels_combined = test_model(model, centroids, test_prompts, test_labels_, device, batch_size, layer_number)
-                    test_auroc = roc_auc_score(test_labels_combined, test_predictions)
-            # wandb.log({
-            #     "semi_supervised_phase/epoch": epoch + 1,
-            #     "semi_supervised_phase/epoch_loss": epoch_loss,
-            #     "semi_supervised_phase/test_auroc": test_auroc
-            # })
+                   test_predictions, test_labels_combined = test_model(model, centroids, test_prompts, test_labels_, device, batch_size, layer_number)
+                   test_auroc = roc_auc_score(test_labels_combined, test_predictions)
+                   
             print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}")
 
             losses.append(epoch_loss)
+        
             if test_auroc > best_test_auroc:
                 best_test_auroc = test_auroc
                 best_test_epoch = epoch + args.init_num_epochs
-                #best_epoch = epoch + 1 # Storing epoch in 1-based index
+                #best_epoch = epoch + 1  # Storing epoch in 1-based index
                 print(f"Best test AUROC: {best_test_auroc:.4f}, at epoch: {best_test_epoch}")
                 logging.info(f"Best test AUROC: {best_test_auroc:.4f}, at epoch: {best_test_epoch}")
-                # wandb.log({
-                #     "best/best_test_auroc": best_test_auroc,
-                #     "best/best_epoch": best_test_epoch
-                # })
+                  
             logging.info(
             f"Epoch [{epoch+1}/{num_epochs}], "
             f"Train Loss: {epoch_loss:.4f}, ")
+           
             logging.info(f"Best test AUROC: {best_test_auroc:.4f}, at epoch: {best_test_epoch}")
-
             
-            # ===============================
-            # SAVE TRAINED CENTROIDS + TSV
-            # ===============================
-    save_dir = os.path.join(dir_name, "saved_vectors")
-    os.makedirs(save_dir, exist_ok=True)
-
-    # ---- Save centroids (2 x hidden_dim) ----
-    centroids_cpu = centroids.detach().cpu().float()
-    np.save(os.path.join(save_dir, "centroid_hallu.npy"), centroids_cpu[0].numpy())
-    np.save(os.path.join(save_dir, "centroid_true.npy"), centroids_cpu[1].numpy())
-    print(f"[Saved] Centroids saved to {save_dir}")
-
-    # ---- Save TSV (only the trained layer: args.str_layer) ----
-    # The model only trains tsv[str_layer], others stay zero
-    trained_tsv = None
-    # find TSV inside model by searching wrapped layer
-    if hasattr(model, "model"): # LlamaForCausalLM model wrapping
-        layers = get_layers(model)
-        layer = layers[args.str_layer]
-        # For res-connection, TSV is inside LlamaDecoderLayerWrapper
-        if isinstance(layer, LlamaDecoderLayerWrapper):
-            trained_tsv = layer.tsv_layer.tsv
-        elif args.component == 'res' or args.component == 'mlp':
-            tsv_layer_module = layer.mlp[1]
-            trained_tsv = tsv_layer_module.tsv
-        elif args.component == 'attn':
-            tsv_layer_module = layer.self_attn.tsv
-            trained_tsv = tsv_layer_module.tsv
-        # else:
-        #     # for mlp/attn component
-        #     try:
-        #         trained_tsv = layer.mlp[-1].tsv # if component='mlp'
-        #     except:
-        #         trained_tsv = layer.self_attn[-1].tsv # if component='attn'
-
-    if trained_tsv is not None:
-        tsv_vector = trained_tsv.detach().cpu().float().numpy()
-        np.save(os.path.join(save_dir,
-                            f"tsv_layer_{args.str_layer}.npy"), tsv_vector)
-        print(f"[Saved] TSV vector for layer {args.str_layer} saved to {save_dir}")
-    else:
-        print("[Warning] TSV not found in model. Nothing saved.")
-    return best_test_auroc
+        return best_test_auroc
 
 
 def test_model(model, centroids, test_prompts, test_labels, device, batch_size, layer_number):
-    model.eval().to(device)
+    model.eval() 
     val_predictions = []
     val_labels_combined = []
+ 
     all_last_token_reps = []
     all_labels = []
 
     num_val_samples = len(test_prompts)
+    
     with torch.no_grad():
         with autocast(dtype=torch.float16):
             for batch_start in range(0, num_val_samples, batch_size):
                 batch_prompts = test_prompts[batch_start:batch_start + batch_size]
                 batch_labels = test_labels[batch_start:batch_start + batch_size]
                 batch_prompts, batch_labels = collate_fn(batch_prompts, batch_labels)
+                
                 attention_mask = (batch_prompts != 0).half().to(device)
                 batch_prompts = batch_prompts.to(device)
                 batch_labels = batch_labels.to(device)
 
                 # Forward pass
-                output = model(batch_prompts, attention_mask=attention_mask, output_hidden_states=True)
+                output = model(batch_prompts.squeeze(), attention_mask=attention_mask.squeeze(), output_hidden_states=True)
                 hidden_states = output.hidden_states
-                hidden_states = torch.stack(hidden_states, dim=0)
+                hidden_states = torch.stack(hidden_states, dim=0).squeeze()
                 last_layer_hidden_state = hidden_states[layer_number]
-                last_token_rep = get_last_non_padded_token_rep(last_layer_hidden_state, attention_mask)
+                last_token_rep = get_last_non_padded_token_rep(last_layer_hidden_state, attention_mask.squeeze())   
+                
                 all_last_token_reps.append(F.normalize(last_token_rep,p=2,dim=-1).detach().cpu().numpy())
                 all_labels.append(batch_labels.cpu().numpy())
+                
                 last_token_rep = F.normalize(last_token_rep, p=2, dim=-1)
                 centroids = F.normalize(centroids, p=2, dim=-1)
+                
                 with autocast(dtype=torch.float16):
-                    similarities = torch.matmul(last_token_rep, centroids.T) # Shape: [256, 2]
+                    similarities = torch.matmul(last_token_rep, centroids.T)  # Shape: [256, 2]
 
-                similarity_scores = torch.softmax(similarities/ 0.1, dim=-1)
-                similarity_scores = similarity_scores[:,1]
+                similarity_scores  = torch.softmax(similarities/ 0.1, dim=-1)
+                similarity_scores  = similarity_scores[:,1] 
                 val_predictions.append(similarity_scores.cpu())
                 val_labels_combined.append(batch_labels.cpu())
+      
 
     val_predictions = torch.cat(val_predictions)
     val_labels_combined = torch.cat(val_labels_combined)
+    
     return val_predictions, val_labels_combined
 
 
@@ -360,6 +317,7 @@ HF_NAMES = {
     'llama3.1-8B': 'meta-llama/Meta-Llama-3.1-8B',
     'qwen2.5-7B': 'Qwen/Qwen2.5-7B'
 }
+
 def main(): 
 
     parser = argparse.ArgumentParser()
@@ -381,9 +339,6 @@ def main():
     parser.add_argument("--str_layer", type=int, default=9)
     parser.add_argument("--component", type=str, default='res')
     parser.add_argument("--lam", type=float, default=5)
-    parser.add_argument("--loss_type", type=str, default='original', 
-                        choices=['original', 'repulsion'], 
-                        help='Choose the objective function: "original" (MLE) or "repulsion" (MLE + Repulsion Term)')
     parser.add_argument("--init_num_epochs", type=int, default=20)
     parser.add_argument("--aug_num_epochs", type=int, default=20)
     parser.add_argument("--num_exemplars", type=int, default=32)
@@ -392,9 +347,6 @@ def main():
     parser.add_argument("--optimizer", type=str, default='AdamW')
     parser.add_argument("--num_iters_sk", type=int, default=3)
     parser.add_argument("--epsilon_sk", type=float, default=0.05)
-    parser.add_argument("--lambda_repulsion", type=float, default=0.1, 
-                    help='Scaling factor for the Prototype Repulsion Term (lambda_rep in the paper).')
-   
     
     args = parser.parse_args()
         
@@ -429,20 +381,19 @@ def main():
 
     if args.gene:
 
-        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, token = '')
         model = AutoModelForCausalLM.from_pretrained(model_name_or_path, low_cpu_mem_usage=True, torch_dtype=torch.float16, device_map="auto", token = '')
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = model.to(torch.float16).to(device)
+        device = torch.device("cuda")
         all_decoded_answers = []
         begin_index = 0
         end_index = len(dataset)
         
         if not os.path.exists(f'./save_for_eval/{args.dataset_name}_hal_det/'):
-            os.makedirs(f'./save_for_eval/{args.dataset_name}_hal_det/', exist_ok=True)
+            os.mkdir(f'./save_for_eval/{args.dataset_name}_hal_det/')
 
         if not os.path.exists(f'./save_for_eval/{args.dataset_name}_hal_det/answers'):
             os.mkdir(f'./save_for_eval/{args.dataset_name}_hal_det/answers')
+
         period_token_id = [tokenizer(_)['input_ids'][-1] for _ in ['\n']]
         period_token_id += [tokenizer.eos_token_id]
         
@@ -451,19 +402,11 @@ def main():
             answers_ = [None] * args.num_gene
             
             question = dataset[i]['question']
-            # prompt = tokenizer(f"Answer the question concisely. Q: {question}" + " A:", return_tensors='pt').input_ids.to(device)
-            enc = tokenizer(
-                f"Answer the question concisely. Q: {question} A:",
-                return_tensors="pt",
-                padding=True,
-            )
-            prompt = enc["input_ids"].to(device)
-            attention_mask = enc["attention_mask"].to(device)
-
+            prompt = tokenizer(f"Answer the question concisely. Q: {question}" + " A:", return_tensors='pt').input_ids.cuda()
+            
             for gen_iter in range(args.num_gene):
                 if args.most_likely:
                     generated = model.generate(prompt,
-                                               attention_mask=attention_mask,
                                                 num_beams=5,
                                                 num_return_sequences=1,
                                                 do_sample=False,
@@ -569,9 +512,8 @@ def main():
             
     elif args.generate_gt:
         from bleurt_pytorch import BleurtForSequenceClassification, BleurtTokenizer
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        model = BleurtForSequenceClassification.from_pretrained('lucadiliello/BLEURT-20').to(device)
+        model = BleurtForSequenceClassification.from_pretrained('lucadiliello/BLEURT-20').cuda()
         tokenizer = BleurtTokenizer.from_pretrained('lucadiliello/BLEURT-20')
         model.eval()
         
@@ -607,7 +549,7 @@ def main():
                     inputs = tokenizer(predictions.tolist(), [all_answers[anw]] * len(predictions),
                                         padding='longest', return_tensors='pt')
                     for key in list(inputs.keys()):
-                        inputs[key] = inputs[key].to(device)
+                        inputs[key] = inputs[key].cuda()
                     res = np.asarray(model(**inputs).logits.flatten().tolist())
                     all_results[anw] = res
             gts = np.concatenate([gts, np.max(all_results, axis=0)], 0)
@@ -616,26 +558,18 @@ def main():
         
         if args.most_likely:
             # np.save(f'./ml_{args.dataset_name}_bleurt_score.npy', gts)
-            np.save(f'ml_{args.dataset_name}_bleurt_score.npy', gts)
+            np.save(f'./ml_{args.dataset_name}_bleurt_score.npy', gts)
             
         else:
-            np.save(f'bg_{args.dataset_name}_bleurt_score.npy', gts)
+            np.save(f'./bg_{args.dataset_name}_bleurt_score.npy', gts)
     
 
                 
     else:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#        model = AutoModelForCausalLM.from_pretrained(model_name_or_path, low_cpu_mem_usage=True, torch_dtype=torch.float16, device_map="auto", token = '')
-#        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, token = '')
-        model = AutoModelForCausalLM.from_pretrained(
-        model_name_or_path,
-        low_cpu_mem_usage=True,
-        torch_dtype=torch.float16,
-        device_map="auto",
-        )
-
-        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-
+        
+        device = torch.device("cuda")
+        model = AutoModelForCausalLM.from_pretrained(model_name_or_path, low_cpu_mem_usage=True, torch_dtype=torch.float16, device_map="auto", token = '')
+        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, token = '')
         
         prompts = []
         qa_pairs = []
@@ -651,14 +585,14 @@ def main():
                 categories.append(dataset[i]['category'])
             
             answers = np.load(
-                f'save_for_eval/{args.dataset_name}_hal_det/answers/most_likely_hal_det_{args.model_name}_{args.dataset_name}_answers_index_{i}.npy')
+                f'./save_for_eval/{args.dataset_name}_hal_det/answers/most_likely_hal_det_{args.model_name}_{args.dataset_name}_answers_index_{i}.npy')
             
      
             for anw in answers:
 
                 prompt = tokenizer(
                     f"Answer the question concisely. Q: {question}" + " A:" + anw,
-                    return_tensors='pt').input_ids.to(device)
+                    return_tensors='pt').input_ids.cuda()
                    
                 prompts.append(prompt)    
                 qa_pairs.append({'Question': question, 'Answer': anw})
@@ -740,5 +674,4 @@ def main():
 
 if __name__ == '__main__':
     seed_everything(42)
-
     main()

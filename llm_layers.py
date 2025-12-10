@@ -8,81 +8,80 @@ from typing import Optional, Tuple
 from cache_utils import Cache
 from transformers.activations import ACT2FN
 
-class LlamaAttentionWrapper(nn.Module):
-    """
-    Custom wrapper for the LlamaAttention module to inject TSV.
-    This wrapper maintains the original function signature by accepting *args and **kwargs,
-    passing them to the original module, and applying the TSV to the resulting hidden_states
-    (the first element of the attention output tuple).
-    """
-    def __init__(self, original_attn, tsv_layer):
-        super().__init__()
-        self.original_attn = original_attn
-        self.tsv = tsv_layer
-
-    def forward(self, *args, **kwargs):
-        # 1. Call original attention block with all arguments
-        # This preserves the required keyword arguments (like hidden_states, attention_mask, etc.)
-        attn_out = self.original_attn(*args, **kwargs)
-
-        # 2. attn_out is a tuple: (hidden_states, past_key_value, ...)
-        # Apply TSV only to the hidden_states (the first element, index 0)
-        original_hidden_states = attn_out[0]
-        new_hidden_states = self.tsv(original_hidden_states)
-        
-        # 3. Reconstruct the output tuple with the modified hidden states
-        new_attn_out = list(attn_out)
-        new_attn_out[0] = new_hidden_states
-        
-        return tuple(new_attn_out)
-
 class LlamaDecoderLayerWrapper(nn.Module):
-    def __init__(self, llama_decoder_layer, tsv_layer):
+    def __init__(self, llama_decoder_layer, tsv_layer, model_name='llama3.1-8B'):
         super().__init__()
-        self.inner = llama_decoder_layer
-        self.tsv = tsv_layer
+        self.llama_decoder_layer = llama_decoder_layer
+        self.tsv_layer = tsv_layer  # Instance of ICVLayer
+        self.model_name = model_name
 
     def forward(
         self,
-        hidden_states,
-        attention_mask=None,
-        position_ids=None,
-        past_key_values=None,
-        output_attentions=False,
-        use_cache=False,
-        cache_position=None,
-        position_embeddings=None,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_value: Optional[Cache] = None,
+        output_attentions: Optional[bool] = False,
+        use_cache: Optional[bool] = False,
+        cache_position: Optional[torch.LongTensor] = None,
+        position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         **kwargs,
-    ):
-        # ---- Call original layer exactly as HF expects ----
-        out = self.inner(
-            hidden_states=hidden_states,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            output_attentions=output_attentions,
-            use_cache=use_cache,
-            cache_position=cache_position,
-            position_embeddings=position_embeddings,
-            **kwargs,
-        )
+    )-> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
+        # Save original residual state
+        residual = hidden_states
 
-        # HF always returns BaseModelOutputWithPast
-        # which behaves like a tuple: (hidden_states, ...)
-        hidden_states = out[0]
+        # Forward pass through the input layer norm
+        hidden_states = self.llama_decoder_layer.input_layernorm(hidden_states)
 
-        # ---- add TSV ----
-        hidden_states = self.tsv(hidden_states)
 
-        # ---- reconstruct same structure ----
-        # out is a BaseModelOutputWithPast / tuple-like object
-        new_out = list(out)
-        new_out[0] = hidden_states      # replace only the hidden states
+        if self.model_name == 'qwen2.5-7B':
+            hidden_states, self_attn_weights, present_key_value = self.llama_decoder_layer.self_attn(
+                hidden_states=hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_value=past_key_value,
+                output_attentions=output_attentions,
+                use_cache=use_cache,
+                cache_position=cache_position,
+                **kwargs,
+            )
+            
+        else:    
+            hidden_states, self_attn_weights, present_key_value = self.llama_decoder_layer.self_attn(
+                    hidden_states=hidden_states,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    past_key_value=past_key_value,
+                    output_attentions=output_attentions,
+                    use_cache=use_cache,
+                    cache_position=cache_position,
+                    position_embeddings=position_embeddings,
+                    **kwargs,
+                )
+        
+        # Add residual + steering vector after self-attention
+        hidden_states = residual.to(hidden_states.device) + hidden_states
+        
 
-        if isinstance(out, tuple):
-            return tuple(new_out)
-        else:
-            return out.__class__(*new_out)
+        # Save residual state for the MLP
+        residual = hidden_states
+
+        # Forward pass through the post-attention layer norm and MLP
+        hidden_states = self.llama_decoder_layer.post_attention_layernorm(hidden_states)
+        hidden_states = self.llama_decoder_layer.mlp(hidden_states)
+
+        # Add residual + steering vector after MLP
+        hidden_states = residual + hidden_states
+        hidden_states = self.tsv_layer(hidden_states)  # Add steering vector
+
+        # Return the outputs
+        outputs = (hidden_states,)
+        if output_attentions:
+            outputs += (self_attn_weights,)
+        if use_cache:
+            outputs += (present_key_value,)
+
+        return outputs
         
 class TSVLayer(nn.Module):
 
@@ -220,14 +219,11 @@ def add_tsv_layers(model: PreTrainedModel, tsv: Tensor, alpha: list, args):
         for i, layer in enumerate(layers):
             if i == args.str_layer:
                 original_attn = find_module(layer, attn_keywords)
-                layer.self_attn = LlamaAttentionWrapper(original_attn, TSVLayer(tsv[i], alpha))
+                layer.self_attn = nn.Sequential(original_attn, TSVLayer(tsv[i], alpha)) 
                 
     elif args.component == 'res':
+        
         for i, layer in enumerate(layers):
             if i == args.str_layer:
-                # patch only AFTER MLP inside the decoder layer
-                orig_mlp = layer.mlp
-                layer.mlp = nn.Sequential(
-                    orig_mlp,
-                    TSVLayer(tsv[i], alpha)
-                )
+                decoder_layer = layers[i]
+                layers[i] = LlamaDecoderLayerWrapper(decoder_layer, TSVLayer(tsv[i], alpha), args.model_name)
