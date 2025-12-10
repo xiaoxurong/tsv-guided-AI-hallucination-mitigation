@@ -582,7 +582,8 @@ def main():
     elif args.generate_gt:
         from bleurt_pytorch import BleurtForSequenceClassification, BleurtTokenizer
 
-        model = BleurtForSequenceClassification.from_pretrained('lucadiliello/BLEURT-20').cuda()
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model = BleurtForSequenceClassification.from_pretrained('lucadiliello/BLEURT-20').to(device)
         tokenizer = BleurtTokenizer.from_pretrained('lucadiliello/BLEURT-20')
         model.eval()
         
@@ -618,7 +619,7 @@ def main():
                     inputs = tokenizer(predictions.tolist(), [all_answers[anw]] * len(predictions),
                                         padding='longest', return_tensors='pt')
                     for key in list(inputs.keys()):
-                        inputs[key] = inputs[key].cuda()
+                        inputs[key] = inputs[key].to(device)
                     res = np.asarray(model(**inputs).logits.flatten().tolist())
                     all_results[anw] = res
             gts = np.concatenate([gts, np.max(all_results, axis=0)], 0)
