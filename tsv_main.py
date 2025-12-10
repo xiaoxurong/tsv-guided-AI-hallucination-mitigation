@@ -131,6 +131,9 @@ def train_model(model, optimizer, device, prompts, labels, args):
                 with torch.no_grad():
                     centroids = update_centroids_ema_hard(centroids, last_token_rep, batch_labels_oh, args)
                 # loss.backward()
+                print("DEBUG last layer grad:", last_layer_hidden_state.requires_grad)
+                print("DEBUG last_token_rep grad:", last_token_rep.requires_grad)
+                print("DEBUG loss grad:", loss.requires_grad)
 
                 if not loss.requires_grad:
                     # If this prints, the graph is indeed broken.
