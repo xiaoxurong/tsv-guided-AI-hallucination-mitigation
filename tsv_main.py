@@ -7,7 +7,7 @@ import numpy as np
 import argparse
 from train_utils import get_last_non_padded_token_rep, compute_ot_loss_cos, update_centroids_ema, update_centroids_ema_hard, get_ex_data, collate_fn
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from llm_layers import add_tsv_layers
+from llm_layers import add_tsv_layers, get_layers, LlamaDecoderLayerWrapper
 from sklearn.metrics import roc_auc_score
 from torch.cuda.amp import autocast, GradScaler
 import torch.nn.functional as F
@@ -28,6 +28,73 @@ def seed_everything(seed: int):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
+def save_trained_vectors(model, centroids, dir_name, args):
+    """
+    Saves the trained centroids and the single trained TSV vector for the specified layer.
+    """
+    # ===============================
+    # SAVE TRAINED CENTROIDS + TSV
+    # ===============================
+    save_dir = os.path.join(dir_name, "saved_vectors")
+    os.makedirs(save_dir, exist_ok=True)
+
+    # ---- Save centroids (2 x hidden_dim) ----
+    # Centroids are assumed to be a torch.Tensor of shape [2, hidden_dim]
+    centroids_cpu = centroids.detach().cpu().float()
+    np.save(os.path.join(save_dir, "centroid_hallu.npy"), centroids_cpu[0].numpy())
+    np.save(os.path.join(save_dir, "centroid_true.npy"), centroids_cpu[1].numpy())
+    print(f"[Saved] Centroids saved to {save_dir}")
+
+    # ---- Save TSV (only the trained layer: args.str_layer) ----
+    trained_tsv = None
+    
+    # 1. Get the list of decoder layers and the specific layer being trained
+    layers = get_layers(model)
+    if args.str_layer >= len(layers) or args.str_layer < 0:
+        print(f"[Warning] Layer index {args.str_layer} out of range (0-{len(layers)-1}). TSV not retrieved.")
+        return
+
+    layer = layers[args.str_layer]
+
+    # 2. Access the TSV based on the injection component type
+    if args.component == 'res':
+        # Residual injection: The entire layer is wrapped (Llama/Qwen wrappers)
+        if isinstance(layer, (LlamaDecoderLayerWrapper, QwenDecoderLayerWrapper)): 
+            # The TSV is stored in the internal tsv_layer module of the wrapper
+            trained_tsv = layer.tsv_layer.tsv
+        else:
+            print(f"[Warning] Layer {args.str_layer} is not a recognized Residual Wrapper ({type(layer)}). TSV not retrieved.")
+            
+    elif args.component == 'mlp':
+        # MLP injection: layer.mlp is replaced by Sequential(original_mlp, tsv_layer)
+        if hasattr(layer, 'mlp') and isinstance(layer.mlp, nn.Sequential) and len(layer.mlp) > 1:
+            # The TSVLayer is at index 1 of the Sequential module
+            tsv_layer_module = layer.mlp[1]
+            if hasattr(tsv_layer_module, 'tsv'):
+                trained_tsv = tsv_layer_module.tsv
+        else:
+            print(f"[Warning] MLP Sequential wrapper not found for layer {args.str_layer}. TSV not retrieved.")
+
+    elif args.component == 'attn':
+        # Attention injection: layer.self_attn is replaced by AttentionWrapper(original_attn, tsv_layer)
+        if hasattr(layer, 'self_attn') and isinstance(layer.self_attn, AttentionWrapper):
+            # The TSV is stored in the internal tsv_layer module of the AttentionWrapper
+            trained_tsv = layer.self_attn.tsv_layer.tsv
+        else:
+            print(f"[Warning] AttentionWrapper not found for layer {args.str_layer}. TSV not retrieved.")
+
+    # 3. Final saving step
+    if trained_tsv is not None:
+        # Check if the TSV is actually non-zero (i.e., was trained)
+        if trained_tsv.norm().item() > 1e-6:
+            tsv_vector = trained_tsv.detach().cpu().float().numpy()
+            np.save(os.path.join(save_dir,
+                                f"tsv_layer_{args.str_layer}.npy"), tsv_vector)
+            print(f"[Saved] TSV vector for layer {args.str_layer} saved to {save_dir}")
+        else:
+             print(f"[Info] TSV vector for layer {args.str_layer} is near zero, skipping save.")
+    else:
+        print("[Warning] TSV not successfully retrieved from model structure. Nothing saved.")
 
 def train_model(model, optimizer, device, prompts, labels, args):
     
@@ -112,7 +179,7 @@ def train_model(model, optimizer, device, prompts, labels, args):
                 
                 batch_labels_oh = torch.nn.functional.one_hot(batch_labels, num_classes=-1)
                 
-                ot_loss, similarities = compute_ot_loss_cos(last_token_rep, centroids, batch_labels_oh, batch_size, args)
+                ot_loss, similarities = compute_ot_loss_cos(last_token_rep, centroids, batch_labels_oh, args)
                 
                 loss = ot_loss 
                 
@@ -260,6 +327,8 @@ def train_model(model, optimizer, device, prompts, labels, args):
             f"Train Loss: {epoch_loss:.4f}, ")
            
             logging.info(f"Best test AUROC: {best_test_auroc:.4f}, at epoch: {best_test_epoch}")
+        
+        save_trained_vectors(model, centroids, dir_name, args)
             
         return best_test_auroc
 
