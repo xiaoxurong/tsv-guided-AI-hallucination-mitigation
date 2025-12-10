@@ -283,7 +283,7 @@ def train_model(model, optimizer, device, prompts, labels, args):
                 last_token_rep = get_last_non_padded_token_rep(last_layer_hidden_state, attention_mask.squeeze())  # Shape: [batch_size, hidden_size]
 
                 
-                ot_loss, similarities = compute_ot_loss_cos(last_token_rep, centroids, batch_labels, batch_size, args)
+                ot_loss, similarities = compute_ot_loss_cos(last_token_rep, centroids, batch_labels, args)
                 
                 loss = ot_loss 
 
