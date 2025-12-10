@@ -195,7 +195,7 @@ def train_model(model, optimizer, device, prompts, labels, args):
     augmented_prompts_train = augmented_prompts
     augmented_labels_label = augmented_labels
     num_samples = len(augmented_prompts_train)
-    with autocast(dtype=torch.float16):
+    with autocast(dtype=torch.bfloat16):
         for epoch in range(num_epochs):
             running_loss = 0.0
             total = 0
@@ -320,7 +320,7 @@ def test_model(model, centroids, test_prompts, test_labels, device, batch_size, 
 
     num_val_samples = len(test_prompts)
     with torch.no_grad():
-        with autocast(dtype=torch.float16):
+        with autocast(dtype=torch.bfloat16):
             for batch_start in range(0, num_val_samples, batch_size):
                 batch_prompts = test_prompts[batch_start:batch_start + batch_size]
                 batch_labels = test_labels[batch_start:batch_start + batch_size]
@@ -339,7 +339,7 @@ def test_model(model, centroids, test_prompts, test_labels, device, batch_size, 
                 all_labels.append(batch_labels.cpu().numpy())
                 last_token_rep = F.normalize(last_token_rep, p=2, dim=-1)
                 centroids = F.normalize(centroids, p=2, dim=-1)
-                with autocast(dtype=torch.float16):
+                with autocast(dtype=torch.bfloat16):
                     similarities = torch.matmul(last_token_rep, centroids.T) # Shape: [256, 2]
 
                 similarity_scores = torch.softmax(similarities/ 0.1, dim=-1)
@@ -429,7 +429,7 @@ def main():
         tokenizer.pad_token = tokenizer.eos_token
         model = AutoModelForCausalLM.from_pretrained(model_name_or_path, low_cpu_mem_usage=True, torch_dtype=torch.bfloat16, device_map="auto", token = '')
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = model.to(torch.float16).to(device)
+        model = model.to(torch.bfloat16).to(device)
         all_decoded_answers = []
         begin_index = 0
         end_index = len(dataset)
