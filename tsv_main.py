@@ -341,8 +341,8 @@ def test_model(model, centroids, test_prompts, test_labels, device, batch_size, 
                 last_token_rep = get_last_non_padded_token_rep(last_layer_hidden_state, attention_mask)
                 all_last_token_reps.append(F.normalize(last_token_rep,p=2,dim=-1).detach().cpu().numpy())
                 all_labels.append(batch_labels.cpu().numpy())
-                last_token_rep = F.normalize(last_token_rep, p=2, dim=-1)
-                centroids = F.normalize(centroids, p=2, dim=-1)
+                last_token_rep = F.normalize(last_token_rep.float(), p=2, dim=-1)
+                centroids = F.normalize(centroids.float(), p=2, dim=-1)
                 with autocast(dtype=torch.float16):
                     similarities = torch.matmul(last_token_rep, centroids.T) # Shape: [256, 2]
 
