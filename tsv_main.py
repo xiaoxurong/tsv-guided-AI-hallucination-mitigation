@@ -131,6 +131,10 @@ def train_model(model, optimizer, device, prompts, labels, args):
                 with torch.no_grad():
                     centroids = update_centroids_ema_hard(centroids, last_token_rep, batch_labels_oh, args)
                 # loss.backward()
+
+                if not loss.requires_grad:
+                    # If this prints, the graph is indeed broken.
+                    print("!!! DEBUG ERROR: LOSS TENSOR DOES NOT REQUIRE GRADIENT. GRAPH IS BROKEN !!!")
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
                 scaler.update()
