@@ -39,26 +39,8 @@ class AttentionWrapper(nn.Module):
         **kwargs,
     )-> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         
-        # 1. Run the original attention module
-        # Note: We must pass all relevant arguments it expects.
-        # This implementation tries to be compatible with both Llama (which takes position_embeddings)
-        # and Qwen (which does not, but will pass it as an ignored kwarg if needed).
-
-        # Check if the original module is a Qwen/Llama attention class which might have different signatures
-        # The safest approach is usually passing all available kwargs.
-        
-        # For simplicity and robustness, we check the model type (or rely on kwargs spreading if safe)
-        # However, since the error was that 'hidden_states' wasn't expected, we must ensure 
-        # the original forward is called correctly. Let's replicate the LlamaDecoderLayerWrapper logic here
-        # but focused only on the attention layer output.
 
         if hasattr(self.original_attn, 'forward'):
-             # Use the correct arguments based on which model the attention layer belongs to
-            
-            # The original attention module is usually called with hidden_states as the first arg.
-            
-            # Use dictionary comprehension to filter out None values for cleaner call
-            # But since all these are passed via kwargs, let's just use them:
             
             # Capture all arguments passed to the wrapper
             attn_kwargs = {
@@ -71,15 +53,6 @@ class AttentionWrapper(nn.Module):
                 'cache_position': cache_position,
                 **kwargs, # Includes position_embeddings for Llama if present
             }
-            
-            # Handle the specific case for Qwen where it doesn't take 'position_embeddings'
-            # If the Qwen attention module doesn't accept a key, PyTorch/Transformers will error.
-            # We can't easily check the signature dynamically, so we rely on model_name detection
-            # from the higher-level caller (add_tsv_layers).
-            
-            # Since this is applied directly inside the decoder layer which calls it,
-            # we rely on the original attention layer being compatible with the parent's call.
-            # We'll pass everything and rely on the original forward ignoring extra kwargs if it can.
             
             # A more robust fix relies on knowing the model type:
             if position_embeddings is not None and 'position_embeddings' not in attn_kwargs:
@@ -111,33 +84,36 @@ class AttentionWrapper(nn.Module):
         return (intervened_attn_output,) + output_tuple[1:]
 
 class LlamaDecoderLayerWrapper(nn.Module):
-    def __init__(self, llama_decoder_layer, tsv_layer, model_name='llama3.1-8B'):
+    def __init__(self, decoder_layer, tsv_layer, model_name):
         super().__init__()
-        self.llama_decoder_layer = llama_decoder_layer
-        self.tsv_layer = tsv_layer  # Instance of ICVLayer
+        self.decoder_layer = decoder_layer
+        self.tsv_layer = tsv_layer
         self.model_name = model_name
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_value: Optional[Cache] = None,
-        output_attentions: Optional[bool] = False,
-        use_cache: Optional[bool] = False,
-        cache_position: Optional[torch.LongTensor] = None,
-        position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
-        **kwargs,
-    )-> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
-        # Save original residual state
+        hidden_states,
+        attention_mask=None,
+        position_ids=None,
+        past_key_value=None,
+        output_attentions=False,
+        use_cache=False,
+        cache_position=None,
+        **kwargs
+    ):
+
+        # Save original dtype/device
+        device = hidden_states.device
+
+        # Normalize input
         residual = hidden_states
+        hidden_states = self.decoder_layer.input_layernorm(hidden_states)
 
-        # Forward pass through the input layer norm
-        hidden_states = self.llama_decoder_layer.input_layernorm(hidden_states)
-
-
-        if self.model_name == 'qwen2.5-7B':
-            hidden_states, self_attn_weights, present_key_value = self.llama_decoder_layer.self_attn(
+        # ----------------------------------------------------
+        # Different attention behavior for Qwen2.5 vs LLaMA
+        # ----------------------------------------------------
+        if "qwen" in self.model_name:
+            attn_out = self.decoder_layer.self_attn(
                 hidden_states=hidden_states,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
@@ -145,11 +121,16 @@ class LlamaDecoderLayerWrapper(nn.Module):
                 output_attentions=output_attentions,
                 use_cache=use_cache,
                 cache_position=cache_position,
-                **kwargs,
             )
-            
-        else:    
-            hidden_states, self_attn_weights, present_key_value = self.llama_decoder_layer.self_attn(
+
+            # Qwen2 returns (hidden_states, attn_weights?) — no present_kv
+            hidden_states = attn_out[0]
+            self_attn_weights = attn_out[1] if output_attentions else None
+            present_key_value = None
+
+        else:
+            hidden_states, self_attn_weights, present_key_value = \
+                self.decoder_layer.self_attn(
                     hidden_states=hidden_states,
                     attention_mask=attention_mask,
                     position_ids=position_ids,
@@ -157,84 +138,70 @@ class LlamaDecoderLayerWrapper(nn.Module):
                     output_attentions=output_attentions,
                     use_cache=use_cache,
                     cache_position=cache_position,
-                    position_embeddings=position_embeddings,
-                    **kwargs,
+                    **kwargs
                 )
-        
-        # Add residual + steering vector after self-attention
-        hidden_states = residual.to(hidden_states.device) + hidden_states
-        
 
-        # Save residual state for the MLP
-        residual = hidden_states
-
-        # Forward pass through the post-attention layer norm and MLP
-        hidden_states = self.llama_decoder_layer.post_attention_layernorm(hidden_states)
-        hidden_states = self.llama_decoder_layer.mlp(hidden_states)
-
-        # Add residual + steering vector after MLP
+        # Residual add
         hidden_states = residual + hidden_states
-        hidden_states = self.tsv_layer(hidden_states)  # Add steering vector
 
-        # Return the outputs
+        # MLP block
+        residual = hidden_states
+        hidden_states = self.decoder_layer.post_attention_layernorm(hidden_states)
+        hidden_states = self.decoder_layer.mlp(hidden_states)
+        hidden_states = residual + hidden_states
+
+        # TSV injection
+        hidden_states = self.tsv_layer(hidden_states)
+
+        # ----------------------------------------------------
+        # Qwen2: return only hidden_states (no tuple allowed)
+        # ----------------------------------------------------
+        if "qwen" in self.model_name:
+            return hidden_states
+
+        # LLaMA-style tuple return
         outputs = (hidden_states,)
         if output_attentions:
             outputs += (self_attn_weights,)
         if use_cache:
             outputs += (present_key_value,)
-
         return outputs
-
-class QwenDecoderLayerWrapper(nn.Module):
-    """
-    A dedicated wrapper for Qwen decoder layers to handle residual TSV injection.
-    It works by simply calling the original layer's forward method and then
-    applying the steering vector to the output.
-    """
-    def __init__(self, qwen_decoder_layer, tsv_layer):
-        super().__init__()
-        self.qwen_decoder_layer = qwen_decoder_layer
-        self.tsv_layer = tsv_layer
-        
-        # CRITICAL: Copy all necessary attributes from the original layer
-        # This prevents AttributeErrors when the parent module checks properties
-        for attr_name, attr_value in qwen_decoder_layer.__dict__.items():
-            if attr_name not in self.__dict__ and not callable(attr_value):
-                setattr(self, attr_name, attr_value)
-
-    def forward(self, *args, **kwargs):
-        # 1. Run the original decoder layer with the original arguments
-        output_tuple = self.qwen_decoder_layer(*args, **kwargs)
-        
-        # 2. Get the new hidden states (always the first element in the output tuple)
-        new_hidden_states = output_tuple[0]
-        
-        # 3. Apply the TSV intervention (residual injection)
-        intervened_hidden_states = self.tsv_layer(new_hidden_states)
-
-        # 4. Return the intervened hidden states plus the rest of the original output tuple
-        return (intervened_hidden_states,) + output_tuple[1:]
         
 class TSVLayer(nn.Module):
-
-    def __init__(self, tsv, lam):
-        super(TSVLayer, self).__init__()
-        self.tsv = tsv
+    """
+    Numerically-stable TSV layer supporting FP32 steering and 
+    projection into model hidden dimension.
+    """
+    def __init__(self, tsv_vec, lam, hidden_size):
+        super().__init__()
         self.lam = lam
 
-    def forward(self, x):
-        if self.tsv is not None:
+        # Convert TSV to float32 for stability
+        self.register_buffer("tsv_vec", tsv_vec.float())
 
-            x = x.half()
-            y = self.lam[0] * self.tsv.repeat(1,x.shape[1],1)
-            y = y.to(x.device)
-            x = x.half() + y
-            
-            return x.half()
-        
-        else:
-            
-            return x.half()
+        # Projection from (orig_dim) → hidden_size
+        self.tsv_proj = nn.Linear(tsv_vec.shape[-1], hidden_size, bias=False)
+
+    def forward(self, x):
+        if self.tsv_vec is None:
+            return x
+
+        B, T, H = x.shape
+        device = x.device
+
+        # Move TSV vec to correct device
+        tsv = self.tsv_vec.to(device)
+
+        # Project only in FP32
+        tsv_h = self.tsv_proj(tsv).unsqueeze(0).unsqueeze(1)  # (1,1,H)
+
+        # Expand to batch and sequence
+        y = tsv_h.expand(B, T, H) * self.lam[0]
+
+        # FP32 addition to avoid NaNs
+        out = (x.float() + y.float()).to(x.dtype)
+
+        return out
         
 
 def get_nested_attr(obj, attr_path):
@@ -341,34 +308,21 @@ def add_tsv_layers(model: PreTrainedModel, tsv: Tensor, alpha: list, args):
     attn_keywords = ["self_attn"]
     
     assert len(tsv) == len(layers)
-    tsv_layer = TSVLayer(tsv[args.str_layer], alpha)
-    
     if args.component == 'mlp':
         for i, layer in enumerate(layers):
             if i == args.str_layer:
                 original_mlp = find_module(layer, mlp_keywords)
-                # The original_mlp (e.g., LlamaMLP) accepts a single tensor, so Sequential works.
-                layer.mlp = nn.Sequential(original_mlp, tsv_layer) 
+                layer.mlp = nn.Sequential(original_mlp, TSVLayer(tsv[i], alpha)) 
 
     elif args.component == 'attn':
         for i, layer in enumerate(layers):
             if i == args.str_layer:
                 original_attn = find_module(layer, attn_keywords)
-                # We must use the wrapper here because the original_attn expects
-                # many keyword arguments (hidden_states, attention_mask, etc.)
-                # which Sequential cannot handle.
-                layer.self_attn = AttentionWrapper(original_attn, tsv_layer) 
+                layer.self_attn = nn.Sequential(original_attn, TSVLayer(tsv[i], alpha)) 
                 
     elif args.component == 'res':
         
         for i, layer in enumerate(layers):
             if i == args.str_layer:
                 decoder_layer = layers[i]
-                
-                # Check for Qwen model to use the dedicated wrapper
-                if 'qwen' in args.model_name.lower():
-                    # Qwen wrapper preserves the original layer's forward signature and applies TSV at the end
-                    layers[i] = QwenDecoderLayerWrapper(decoder_layer, tsv_layer)
-                # Otherwise, use the Llama wrapper, which manually re-implements the forward pass
-                else:
-                    layers[i] = LlamaDecoderLayerWrapper(decoder_layer, tsv_layer, args.model_name)
+                layers[i] = LlamaDecoderLayerWrapper(decoder_layer, TSVLayer(tsv[i], alpha), args.model_name)
