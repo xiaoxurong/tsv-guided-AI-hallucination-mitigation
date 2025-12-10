@@ -106,8 +106,8 @@ def train_model(model, optimizer, device, prompts, labels, args):
             # Forward pass
             with torch.amp.autocast("cuda", dtype=torch.bfloat16):
                 output = model(batch_prompts.squeeze(-1), attention_mask=attention_mask.squeeze(-1), output_hidden_states=True)
-                hidden_states = output.hidden_states
-                hidden_states = torch.stack(hidden_states, dim=0).squeeze(-1)
+                # hidden_states = output.hidden_states
+                # hidden_states = torch.stack(hidden_states, dim=0).squeeze(-1)
                 last_layer_hidden_state = hidden_states[layer_number] # Shape: [batch_size, max_seq_len, hidden_size]
                 # Use attention mask to ignore padding tokens, and get the last non-padded token's representation
                 last_token_rep = get_last_non_padded_token_rep(last_layer_hidden_state, attention_mask.squeeze(-1))
