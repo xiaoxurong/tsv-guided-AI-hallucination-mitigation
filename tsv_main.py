@@ -135,6 +135,7 @@ def train_model(model, optimizer, device, prompts, labels, args):
                 print("DEBUG last_token_rep grad:", last_token_rep.requires_grad)
                 print("DEBUG loss grad:", loss.requires_grad)
 
+                print("loss:", loss)
                 if not loss.requires_grad:
                     # If this prints, the graph is indeed broken.
                     print("!!! DEBUG ERROR: LOSS TENSOR DOES NOT REQUIRE GRADIENT. GRAPH IS BROKEN !!!")
