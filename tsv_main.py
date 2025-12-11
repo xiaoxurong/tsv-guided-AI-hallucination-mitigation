@@ -1,5 +1,6 @@
 import os
 import torch
+import random
 import torch.nn as nn
 from datasets import load_dataset
 from tqdm import tqdm
@@ -7,7 +8,7 @@ import numpy as np
 import argparse
 from train_utils import compute_ot_and_repulsion_loss, get_last_non_padded_token_rep, compute_ot_loss_cos, update_centroids_ema, update_centroids_ema_hard, get_ex_data, collate_fn
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from llm_layers import add_tsv_layers, get_layers, LlamaDecoderLayerWrapper, AttentionWrapper
+from llm_layers import add_tsv_layers, get_layers, LlamaDecoderLayerWrapper, LlamaAttentionWrapper
 from sklearn.metrics import roc_auc_score
 from torch.cuda.amp import autocast, GradScaler
 import torch.nn.functional as F
@@ -16,9 +17,6 @@ import logging
 
 
 def seed_everything(seed: int):
-    import random, os
-    import numpy as np
-    import torch
 
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
@@ -77,7 +75,7 @@ def save_trained_vectors(model, centroids, dir_name, args):
 
     elif args.component == 'attn':
         # Attention injection: layer.self_attn is replaced by AttentionWrapper(original_attn, tsv_layer)
-        if hasattr(layer, 'self_attn') and isinstance(layer.self_attn, AttentionWrapper):
+        if hasattr(layer, 'self_attn') and isinstance(layer.self_attn, LlamaAttentionWrapper):
             # The TSV is stored in the internal tsv_layer module of the AttentionWrapper
             trained_tsv = layer.self_attn.tsv_layer.tsv
         else:
@@ -115,8 +113,9 @@ def train_model(model, optimizer, device, prompts, labels, args):
     
     test_prompts, train_prompts, exemplar_prompts = prompts[0], prompts[1], prompts[2]
     test_labels, train_labels, exemplar_labels = labels[0], labels[1], labels[2]
+    test_labels_tensor = torch.tensor(test_labels).to(device)
     print("\n=== TEST LABEL DISTRIBUTION ===")
-    print(torch.unique(test_labels, return_counts=True))
+    print(torch.unique(test_labels_tensor, return_counts=True))
     print("===============================\n")
 
     batch_size = args.batch_size
@@ -296,6 +295,14 @@ def train_model(model, optimizer, device, prompts, labels, args):
                 # Use attention mask to ignore padding tokens, and get the last non-padded token's representation
                 last_token_rep = get_last_non_padded_token_rep(last_layer_hidden_state, attention_mask.squeeze())  # Shape: [batch_size, hidden_size]
 
+                if args.loss_type == 'repulsion':
+                    loss, similarities = compute_ot_and_repulsion_loss(
+                        last_token_rep, centroids, batch_labels, args
+                    )
+                elif args.loss_type == 'original':
+                    loss, similarities = compute_ot_loss_cos(
+                        last_token_rep, centroids, batch_labels, args
+                    )
                 with torch.no_grad():
                     
                    centroids = update_centroids_ema(centroids, last_token_rep, batch_labels.half(), args)
