@@ -28,7 +28,7 @@ from huggingface_hub import notebook_login
 #ARGUMENTS, MODEL/JUDGE CHOICES:
 
 # --- CONFIGURATION (Edit these defaults directly) ---
-DEFAULT_MODEL_NAME = "llama3_8B_instruct"
+DEFAULT_MODEL_NAME = "qwen-7B"
 # DEFAULT_MODEL_NAME = "llama_7B" #we can change this back, just for testing.
 DEFAULT_TSV_PATH = "tsv_vectors_layer_9.pt"
 DEFAULT_LAYER_ID = 9
@@ -66,7 +66,9 @@ HF_NAMES = {
     'local_llama2_chat_13B': 'results_dump/edited_models_dump/llama2_chat_13B_seed_42_top_48_heads_alpha_15',
     'local_llama2_chat_70B': 'results_dump/edited_models_dump/llama2_chat_70B_seed_42_top_48_heads_alpha_15',
     'local_llama3_8B_instruct': 'results_dump/edited_models_dump/llama3_8B_instruct_seed_42_top_48_heads_alpha_15',
-    'local_llama3_70B_instruct': 'results_dump/edited_models_dump/llama3_70B_instruct_seed_42_top_48_heads_alpha_15'
+    'local_llama3_70B_instruct': 'results_dump/edited_models_dump/llama3_70B_instruct_seed_42_top_48_heads_alpha_15',
+
+    'qwen-7B': 'Qwen/Qwen2.5-7B'
 }
 
 def parse_args():
@@ -97,6 +99,7 @@ def main():
 
     args = parse_args()
     print("arguments:")
+    print(args.model_name)
     print(args.mode)
     print(args.layer_id)
 
@@ -135,9 +138,9 @@ def main():
         df = df.sample(frac=1).reset_index(drop=True)
         df = df[:100]
     #Load in TSV and Centroids
-    tsv = np.load(f"./tsv_info/layer_{args.layer_id}/tsv_layer_{args.layer_id}.npy")
-    centroid_true = np.load(f"./tsv_info/layer_{args.layer_id}/centroid_true.npy")
-    centroid_hallu = np.load(f"./tsv_info/layer_{args.layer_id}/centroid_hallu.npy")
+    tsv = np.load(f"./tsv_info/qwen/layer_{args.layer_id}/tsv_layer_{args.layer_id}.npy")
+    centroid_true = np.load(f"./tsv_info/qwen/layer_{args.layer_id}/centroid_true.npy")
+    centroid_hallu = np.load(f"./tsv_info/qwen/layer_{args.layer_id}/centroid_hallu.npy")
     # # layer_9_info = torch.load("./tsv_info/layer_31/tsv_vectors_layer_9.pt")
     tsv_data = {"direction": torch.tensor(tsv, dtype=torch.float32), "mu_T": torch.tensor(centroid_true, dtype=torch.float32), "mu_H": torch.tensor(centroid_hallu, dtype=torch.float32)}
     # tsv_data = layer_9_info
