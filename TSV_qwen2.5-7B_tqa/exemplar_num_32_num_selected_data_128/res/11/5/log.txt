@@ -1,0 +1,127 @@
+2025-12-11 01:06:42,651 - INFO - Starting training
+2025-12-11 01:06:42,651 - INFO - Training parameters: few_shot_size=32, num_selected_data=128, component=res, str_layer=11
+2025-12-11 01:06:43,860 - INFO - Epoch [1/20], Loss: 0.6930
+2025-12-11 01:06:43,860 - INFO - Best test AUROC: 0.4457, at epoch: 0
+2025-12-11 01:06:43,860 - INFO - Epoch [1/20], Train Loss: 0.6930, 
+2025-12-11 01:06:43,860 - INFO - Test AUROC: 0.4457
+2025-12-11 01:06:44,605 - INFO - Epoch [2/20], Loss: 0.6638
+2025-12-11 01:06:44,605 - INFO - Best test AUROC: 0.4488, at epoch: 1
+2025-12-11 01:06:44,605 - INFO - Epoch [2/20], Train Loss: 0.6638, 
+2025-12-11 01:06:44,605 - INFO - Test AUROC: 0.4488
+2025-12-11 01:06:45,340 - INFO - Epoch [3/20], Loss: 0.6474
+2025-12-11 01:06:45,341 - INFO - Best test AUROC: 0.4526, at epoch: 2
+2025-12-11 01:06:45,341 - INFO - Epoch [3/20], Train Loss: 0.6474, 
+2025-12-11 01:06:45,341 - INFO - Test AUROC: 0.4526
+2025-12-11 01:06:46,078 - INFO - Epoch [4/20], Loss: 0.6343
+2025-12-11 01:06:46,079 - INFO - Epoch [4/20], Train Loss: 0.6343, 
+2025-12-11 01:06:46,079 - INFO - Test AUROC: 0.4500
+2025-12-11 01:06:46,818 - INFO - Epoch [5/20], Loss: 0.6217
+2025-12-11 01:06:46,818 - INFO - Best test AUROC: 0.4587, at epoch: 4
+2025-12-11 01:06:46,818 - INFO - Epoch [5/20], Train Loss: 0.6217, 
+2025-12-11 01:06:46,818 - INFO - Test AUROC: 0.4587
+2025-12-11 01:06:47,560 - INFO - Epoch [6/20], Loss: 0.6092
+2025-12-11 01:06:47,560 - INFO - Best test AUROC: 0.4636, at epoch: 5
+2025-12-11 01:06:47,560 - INFO - Epoch [6/20], Train Loss: 0.6092, 
+2025-12-11 01:06:47,560 - INFO - Test AUROC: 0.4636
+2025-12-11 01:06:48,297 - INFO - Epoch [7/20], Loss: 0.5974
+2025-12-11 01:06:48,297 - INFO - Best test AUROC: 0.4640, at epoch: 6
+2025-12-11 01:06:48,297 - INFO - Epoch [7/20], Train Loss: 0.5974, 
+2025-12-11 01:06:48,297 - INFO - Test AUROC: 0.4640
+2025-12-11 01:06:49,037 - INFO - Epoch [8/20], Loss: 0.5868
+2025-12-11 01:06:49,037 - INFO - Best test AUROC: 0.4641, at epoch: 7
+2025-12-11 01:06:49,037 - INFO - Epoch [8/20], Train Loss: 0.5868, 
+2025-12-11 01:06:49,037 - INFO - Test AUROC: 0.4641
+2025-12-11 01:06:49,774 - INFO - Epoch [9/20], Loss: 0.5770
+2025-12-11 01:06:49,774 - INFO - Epoch [9/20], Train Loss: 0.5770, 
+2025-12-11 01:06:49,774 - INFO - Test AUROC: 0.4638
+2025-12-11 01:06:50,515 - INFO - Epoch [10/20], Loss: 0.5679
+2025-12-11 01:06:50,515 - INFO - Epoch [10/20], Train Loss: 0.5679, 
+2025-12-11 01:06:50,515 - INFO - Test AUROC: 0.4577
+2025-12-11 01:06:51,259 - INFO - Epoch [11/20], Loss: 0.5592
+2025-12-11 01:06:51,259 - INFO - Epoch [11/20], Train Loss: 0.5592, 
+2025-12-11 01:06:51,259 - INFO - Test AUROC: 0.4546
+2025-12-11 01:06:52,002 - INFO - Epoch [12/20], Loss: 0.5508
+2025-12-11 01:06:52,002 - INFO - Epoch [12/20], Train Loss: 0.5508, 
+2025-12-11 01:06:52,002 - INFO - Test AUROC: 0.4528
+2025-12-11 01:06:52,737 - INFO - Epoch [13/20], Loss: 0.5426
+2025-12-11 01:06:52,737 - INFO - Epoch [13/20], Train Loss: 0.5426, 
+2025-12-11 01:06:52,737 - INFO - Test AUROC: 0.4512
+2025-12-11 01:06:53,484 - INFO - Epoch [14/20], Loss: 0.5338
+2025-12-11 01:06:53,484 - INFO - Epoch [14/20], Train Loss: 0.5338, 
+2025-12-11 01:06:53,484 - INFO - Test AUROC: 0.4493
+2025-12-11 01:06:54,227 - INFO - Epoch [15/20], Loss: 0.5240
+2025-12-11 01:06:54,227 - INFO - Epoch [15/20], Train Loss: 0.5240, 
+2025-12-11 01:06:54,227 - INFO - Test AUROC: 0.4445
+2025-12-11 01:06:54,966 - INFO - Epoch [16/20], Loss: 0.5134
+2025-12-11 01:06:54,966 - INFO - Epoch [16/20], Train Loss: 0.5134, 
+2025-12-11 01:06:54,966 - INFO - Test AUROC: 0.4437
+2025-12-11 01:06:55,703 - INFO - Epoch [17/20], Loss: 0.5018
+2025-12-11 01:06:55,703 - INFO - Epoch [17/20], Train Loss: 0.5018, 
+2025-12-11 01:06:55,703 - INFO - Test AUROC: 0.4398
+2025-12-11 01:06:56,446 - INFO - Epoch [18/20], Loss: 0.4890
+2025-12-11 01:06:56,446 - INFO - Epoch [18/20], Train Loss: 0.4890, 
+2025-12-11 01:06:56,446 - INFO - Test AUROC: 0.4438
+2025-12-11 01:06:57,185 - INFO - Epoch [19/20], Loss: 0.4746
+2025-12-11 01:06:57,185 - INFO - Epoch [19/20], Train Loss: 0.4746, 
+2025-12-11 01:06:57,185 - INFO - Test AUROC: 0.4586
+2025-12-11 01:06:57,926 - INFO - Epoch [20/20], Loss: 0.4584
+2025-12-11 01:06:57,926 - INFO - Best test AUROC: 0.4753, at epoch: 19
+2025-12-11 01:06:57,926 - INFO - Epoch [20/20], Train Loss: 0.4584, 
+2025-12-11 01:06:57,926 - INFO - Test AUROC: 0.4753
+2025-12-11 01:06:57,926 - INFO - SS Learning Starts
+2025-12-11 01:07:00,626 - INFO - Best test AUROC: 0.4806, at epoch: 20
+2025-12-11 01:07:00,626 - INFO - Epoch [1/20], Train Loss: 0.0862, 
+2025-12-11 01:07:00,626 - INFO - Best test AUROC: 0.4806, at epoch: 20
+2025-12-11 01:07:02,021 - INFO - Best test AUROC: 0.4876, at epoch: 21
+2025-12-11 01:07:02,021 - INFO - Epoch [2/20], Train Loss: 0.0825, 
+2025-12-11 01:07:02,021 - INFO - Best test AUROC: 0.4876, at epoch: 21
+2025-12-11 01:07:03,411 - INFO - Best test AUROC: 0.4952, at epoch: 22
+2025-12-11 01:07:03,411 - INFO - Epoch [3/20], Train Loss: 0.0786, 
+2025-12-11 01:07:03,411 - INFO - Best test AUROC: 0.4952, at epoch: 22
+2025-12-11 01:07:04,809 - INFO - Best test AUROC: 0.5021, at epoch: 23
+2025-12-11 01:07:04,809 - INFO - Epoch [4/20], Train Loss: 0.0749, 
+2025-12-11 01:07:04,809 - INFO - Best test AUROC: 0.5021, at epoch: 23
+2025-12-11 01:07:06,205 - INFO - Epoch [5/20], Train Loss: 0.0713, 
+2025-12-11 01:07:06,206 - INFO - Best test AUROC: 0.5021, at epoch: 23
+2025-12-11 01:07:07,602 - INFO - Epoch [6/20], Train Loss: 0.0677, 
+2025-12-11 01:07:07,602 - INFO - Best test AUROC: 0.5021, at epoch: 23
+2025-12-11 01:07:08,996 - INFO - Epoch [7/20], Train Loss: 0.0644, 
+2025-12-11 01:07:08,996 - INFO - Best test AUROC: 0.5021, at epoch: 23
+2025-12-11 01:07:10,389 - INFO - Best test AUROC: 0.5032, at epoch: 27
+2025-12-11 01:07:10,389 - INFO - Epoch [8/20], Train Loss: 0.0602, 
+2025-12-11 01:07:10,389 - INFO - Best test AUROC: 0.5032, at epoch: 27
+2025-12-11 01:07:11,782 - INFO - Best test AUROC: 0.5128, at epoch: 28
+2025-12-11 01:07:11,782 - INFO - Epoch [9/20], Train Loss: 0.0567, 
+2025-12-11 01:07:11,782 - INFO - Best test AUROC: 0.5128, at epoch: 28
+2025-12-11 01:07:13,175 - INFO - Best test AUROC: 0.5158, at epoch: 29
+2025-12-11 01:07:13,175 - INFO - Epoch [10/20], Train Loss: 0.0532, 
+2025-12-11 01:07:13,175 - INFO - Best test AUROC: 0.5158, at epoch: 29
+2025-12-11 01:07:14,572 - INFO - Best test AUROC: 0.5240, at epoch: 30
+2025-12-11 01:07:14,572 - INFO - Epoch [11/20], Train Loss: 0.0498, 
+2025-12-11 01:07:14,572 - INFO - Best test AUROC: 0.5240, at epoch: 30
+2025-12-11 01:07:15,967 - INFO - Best test AUROC: 0.5354, at epoch: 31
+2025-12-11 01:07:15,967 - INFO - Epoch [12/20], Train Loss: 0.0464, 
+2025-12-11 01:07:15,967 - INFO - Best test AUROC: 0.5354, at epoch: 31
+2025-12-11 01:07:17,360 - INFO - Best test AUROC: 0.5451, at epoch: 32
+2025-12-11 01:07:17,360 - INFO - Epoch [13/20], Train Loss: 0.0433, 
+2025-12-11 01:07:17,360 - INFO - Best test AUROC: 0.5451, at epoch: 32
+2025-12-11 01:07:18,755 - INFO - Best test AUROC: 0.5556, at epoch: 33
+2025-12-11 01:07:18,755 - INFO - Epoch [14/20], Train Loss: 0.0403, 
+2025-12-11 01:07:18,755 - INFO - Best test AUROC: 0.5556, at epoch: 33
+2025-12-11 01:07:20,153 - INFO - Best test AUROC: 0.5701, at epoch: 34
+2025-12-11 01:07:20,153 - INFO - Epoch [15/20], Train Loss: 0.0372, 
+2025-12-11 01:07:20,153 - INFO - Best test AUROC: 0.5701, at epoch: 34
+2025-12-11 01:07:21,553 - INFO - Best test AUROC: 0.5794, at epoch: 35
+2025-12-11 01:07:21,553 - INFO - Epoch [16/20], Train Loss: 0.0343, 
+2025-12-11 01:07:21,553 - INFO - Best test AUROC: 0.5794, at epoch: 35
+2025-12-11 01:07:22,950 - INFO - Best test AUROC: 0.5852, at epoch: 36
+2025-12-11 01:07:22,950 - INFO - Epoch [17/20], Train Loss: 0.0316, 
+2025-12-11 01:07:22,950 - INFO - Best test AUROC: 0.5852, at epoch: 36
+2025-12-11 01:07:24,347 - INFO - Best test AUROC: 0.5917, at epoch: 37
+2025-12-11 01:07:24,347 - INFO - Epoch [18/20], Train Loss: 0.0291, 
+2025-12-11 01:07:24,347 - INFO - Best test AUROC: 0.5917, at epoch: 37
+2025-12-11 01:07:25,737 - INFO - Best test AUROC: 0.5955, at epoch: 38
+2025-12-11 01:07:25,737 - INFO - Epoch [19/20], Train Loss: 0.0274, 
+2025-12-11 01:07:25,737 - INFO - Best test AUROC: 0.5955, at epoch: 38
+2025-12-11 01:07:27,133 - INFO - Epoch [20/20], Train Loss: 0.0252, 
+2025-12-11 01:07:27,133 - INFO - Best test AUROC: 0.5955, at epoch: 38
