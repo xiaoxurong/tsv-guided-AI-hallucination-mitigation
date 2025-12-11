@@ -83,6 +83,31 @@ class LlamaDecoderLayerWrapper(nn.Module):
             return tuple(new_out)
         else:
             return out.__class__(*new_out)
+
+class QwenAttentionWrapper(nn.Module):
+    """Wraps Qwen2 attention and adds TSV shift to output."""
+    def __init__(self, original_attn, tsv_layer):
+        super().__init__()
+        self.original_attn = original_attn
+        self.tsv_layer = tsv_layer
+
+    def forward(self, hidden_states, **kwargs):
+        x = self.original_attn(hidden_states, **kwargs)
+        tsv = self.tsv_layer.tsv.to(x.device).repeat(1, x.shape[1], 1)
+        return x + tsv * self.tsv_layer.lam[0]
+
+
+class QwenDecoderLayerWrapper(nn.Module):
+    """Wraps entire Qwen2 decoder layer for residual-based TSV injection."""
+    def __init__(self, original_layer, tsv_layer):
+        super().__init__()
+        self.original_layer = original_layer
+        self.tsv_layer = tsv_layer
+
+    def forward(self, hidden_states, **kwargs):
+        x = self.original_layer(hidden_states, **kwargs)
+        tsv = self.tsv_layer.tsv.to(x.device).repeat(1, x.shape[1], 1)
+        return x + tsv * self.tsv_layer.lam[0]
         
 class TSVLayer(nn.Module):
 
@@ -193,10 +218,13 @@ def get_layers_path(model: PreTrainedModel):
     longest_path, longest_len = find_longest_modulelist(model)
     return longest_path
 
-
 def get_layers(model: PreTrainedModel):
-    longest_path = get_layers_path(model)
-    return get_nested_attr(model, longest_path)
+    if hasattr(model, "model") and hasattr(model.model, "layers"):
+        return model.model.layers
+    elif hasattr(model, "layers"):
+        return model.layers
+    else:
+        raise ValueError("Cannot find decoder layers in model.")
 
 def get_mlp_layers(model: PreTrainedModel):
     layers = get_layers(model)
@@ -204,30 +232,99 @@ def get_mlp_layers(model: PreTrainedModel):
     mlp_layers = [find_module(layer, mlp_keywords) for layer in layers]
     return mlp_layers
 
-def add_tsv_layers(model: PreTrainedModel, tsv: Tensor, alpha: list, args):
+def add_tsv_layers(model: PreTrainedModel, tsv: torch.Tensor, alpha: list, args):
     layers = get_layers(model)
-    mlp_keywords = ["mlp", "feedforward", "ffn"]
-    attn_keywords = ["self_attn"]
-    
-    assert len(tsv) == len(layers)
-    if args.component == 'mlp':
-        for i, layer in enumerate(layers):
-            if i == args.str_layer:
-                original_mlp = find_module(layer, mlp_keywords)
-                layer.mlp = nn.Sequential(original_mlp, TSVLayer(tsv[i], alpha)) 
 
-    elif args.component == 'attn':
+    assert len(tsv) == len(layers), \
+        f"TSV has {len(tsv)} vectors but model has {len(layers)} layers."
+
+    # Import model-specific classes
+    try:
+        from transformers.models.qwen2.modeling_qwen2 import Qwen2DecoderLayer
+        from transformers.models.qwen2.modeling_qwen2 import Qwen2Attention
+    except:
+        Qwen2DecoderLayer, Qwen2Attention = None, None
+
+    # Llama imports (may or may not exist for your model)
+    try:
+        from llm_layers import LlamaAttentionWrapper, LlamaDecoderLayerWrapper
+    except:
+        LlamaAttentionWrapper, LlamaDecoderLayerWrapper = None, None
+
+    # -------------------------
+    # Choose component type
+    # -------------------------
+
+    # -------------------------
+    # 1. MLP INJECTION (works for Qwen and Llama)
+    # -------------------------
+    if args.component == "mlp":
         for i, layer in enumerate(layers):
             if i == args.str_layer:
-                original_attn = find_module(layer, attn_keywords)
-                layer.self_attn = LlamaAttentionWrapper(original_attn, TSVLayer(tsv[i], alpha))
-                
-    elif args.component == 'res':
-        for i, layer in enumerate(layers):
-            if i == args.str_layer:
-                # patch only AFTER MLP inside the decoder layer
-                orig_mlp = layer.mlp
+                original_mlp = layer.mlp
                 layer.mlp = nn.Sequential(
-                    orig_mlp,
+                    original_mlp,
                     TSVLayer(tsv[i], alpha)
                 )
+        return model
+
+    # -------------------------
+    # 2. ATTENTION INJECTION
+    # -------------------------
+    elif args.component == "attn":
+        for i, layer in enumerate(layers):
+            if i == args.str_layer:
+
+                # Qwen-style attention
+                if Qwen2Attention and isinstance(layer.self_attn, Qwen2Attention):
+                    layer.self_attn = QwenAttentionWrapper(
+                        layer.self_attn,
+                        TSVLayer(tsv[i], alpha)
+                    )
+
+                # Llama-style attention
+                elif LlamaAttentionWrapper and hasattr(layer, "self_attn"):
+                    layer.self_attn = LlamaAttentionWrapper(
+                        layer.self_attn,
+                        TSVLayer(tsv[i], alpha)
+                    )
+
+                else:
+                    print(f"[Warning] Cannot wrap attention of layer {i} (type={type(layer.self_attn)})")
+
+        return model
+
+    # -------------------------
+    # 3. RESIDUAL INJECTION
+    # -------------------------
+    elif args.component == "res":
+        for i, layer in enumerate(layers):
+            if i == args.str_layer:
+
+                # Qwen residual wrapper
+                if Qwen2DecoderLayer and isinstance(layer, Qwen2DecoderLayer):
+                    layers[i] = QwenDecoderLayerWrapper(
+                        layer,
+                        TSVLayer(tsv[i], alpha)
+                    )
+
+                # Llama residual wrapper
+                elif LlamaDecoderLayerWrapper and isinstance(layer, LlamaDecoderLayerWrapper):
+                    layers[i] = LlamaDecoderLayerWrapper(
+                        layer,
+                        TSVLayer(tsv[i], alpha)
+                    )
+
+                else:
+                    # Fallback: inject after MLP (original Llama TSV trick)
+                    orig_mlp = layer.mlp
+                    layer.mlp = nn.Sequential(
+                        orig_mlp,
+                        TSVLayer(tsv[i], alpha)
+                    )
+                    print(f"[Warning] True residual wrapper not available for layer {i}. Applied post-MLP TSV instead.")
+
+        return model
+
+    else:
+        raise ValueError(f"Unknown component type: {args.component}")
