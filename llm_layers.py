@@ -97,15 +97,16 @@ class LlamaDecoderLayerWrapper(nn.Module):
 
     def forward(
         self,
-        hidden_states,
-        attention_mask=None,
-        position_ids=None,
-        past_key_value=None,
-        output_attentions=False,
-        use_cache=False,
-        cache_position=None,
-        **kwargs
-    ):
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_value: Optional[Cache] = None,
+        output_attentions: Optional[bool] = False,
+        use_cache: Optional[bool] = False,
+        cache_position: Optional[torch.LongTensor] = None,
+        position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        **kwargs,
+    )-> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
 
         # Save original dtype/device
         device = hidden_states.device
@@ -118,16 +119,17 @@ class LlamaDecoderLayerWrapper(nn.Module):
         # Different attention behavior for Qwen2.5 vs LLaMA
         # ----------------------------------------------------
         if "qwen" in self.model_name:
+
             attn_out = self.decoder_layer.self_attn(
                 hidden_states=hidden_states,
                 attention_mask=attention_mask,
-                position_ids=position_ids
+                position_ids=position_ids,
+                past_key_value=past_key_value,
                 output_attentions=output_attentions,
                 use_cache=use_cache,
                 cache_position=cache_position,
                 position_embeddings=position_embeddings
             )
-
             # Qwen2 returns (hidden_states, attn_weights?) — no present_kv
             hidden_states = attn_out[0]
             self_attn_weights = attn_out[1] if output_attentions else None
@@ -179,7 +181,7 @@ class TSVLayer(nn.Module):
     """
     def __init__(self, tsv_vec, lam, hidden_size):
         super().__init__()
-        self.lam = lam
+        self.lam = float(lam)
 
         # Convert TSV to float32 for stability
         self.register_buffer("tsv_vec", tsv_vec.float())
