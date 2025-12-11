@@ -37,31 +37,44 @@ def save_trained_vectors(model, centroids, dir_name, args):
     os.makedirs(save_dir, exist_ok=True)
 
     # ---- Save centroids (2 x hidden_dim) ----
-    # Centroids are assumed to be a torch.Tensor of shape [2, hidden_dim]
-    centroids_cpu = centroids.detach().cpu().float()
-    np.save(os.path.join(save_dir, "centroid_hallu.npy"), centroids_cpu[0].numpy())
-    np.save(os.path.join(save_dir, "centroid_true.npy"), centroids_cpu[1].numpy())
-    print(f"[Saved] Centroids saved to {save_dir}")
+    if centroids is not None:
+        centroids_cpu = centroids.detach().cpu().float()
+        np.save(os.path.join(save_dir, "centroid_hallu.npy"), centroids_cpu[0].numpy())
+        np.save(os.path.join(save_dir, "centroid_true.npy"),  centroids_cpu[1].numpy())
+        print(f"[Saved] Centroids saved to {save_dir}")
+    else:
+        print("[Warning] Centroids are None, skipping save.")
 
     # ---- Save TSV (only the trained layer: args.str_layer) ----
     trained_tsv = None
     
     # 1. Get the list of decoder layers and the specific layer being trained
-    layers = get_layers(model)
-    if args.str_layer >= len(layers) or args.str_layer < 0:
-        print(f"[Warning] Layer index {args.str_layer} out of range (0-{len(layers)-1}). TSV not retrieved.")
+    try:
+        layers = get_layers(model)
+    except Exception as e:
+        print(f"[Error] Could not retrieve model layers: {e}")
         return
 
-    layer = layers[args.str_layer]
+    if args.str_layer >= len(layers) or args.str_layer < 0:
+        # Handle negative indexing if str_layer is like -1
+        if args.str_layer < 0 and abs(args.str_layer) <= len(layers):
+             layer = layers[args.str_layer]
+             print(f"[Info] Using negative layer index {args.str_layer}.")
+        else:
+            print(f"[Warning] Layer index {args.str_layer} out of range (0-{len(layers)-1}). TSV not retrieved.")
+            return
+    else:
+        layer = layers[args.str_layer]
 
     # 2. Access the TSV based on the injection component type
+    print(f"[Info] Attempting to retrieve TSV for component '{args.component}' from layer {args.str_layer}...")
+
     if args.component == 'res':
-        # Residual injection: The entire layer is wrapped (Llama/Qwen wrappers)
-        if isinstance(layer, (LlamaDecoderLayerWrapper)): 
-            # The TSV is stored in the internal tsv_layer module of the wrapper
+        # Residual injection: The entire layer is wrapped
+        if hasattr(layer, 'tsv_layer') and hasattr(layer.tsv_layer, 'tsv'):
             trained_tsv = layer.tsv_layer.tsv
         else:
-            print(f"[Warning] Layer {args.str_layer} is not a recognized Residual Wrapper ({type(layer)}). TSV not retrieved.")
+            print(f"[Warning] Layer {args.str_layer} does not have 'tsv_layer.tsv'. Type: {type(layer)}")
             
     elif args.component == 'mlp':
         # MLP injection: layer.mlp is replaced by Sequential(original_mlp, tsv_layer)
@@ -70,29 +83,37 @@ def save_trained_vectors(model, centroids, dir_name, args):
             tsv_layer_module = layer.mlp[1]
             if hasattr(tsv_layer_module, 'tsv'):
                 trained_tsv = tsv_layer_module.tsv
+            else:
+                 print(f"[Warning] MLP Sequential index 1 does not have 'tsv'. Type: {type(tsv_layer_module)}")
         else:
             print(f"[Warning] MLP Sequential wrapper not found for layer {args.str_layer}. TSV not retrieved.")
 
     elif args.component == 'attn':
         # Attention injection: layer.self_attn is replaced by AttentionWrapper(original_attn, tsv_layer)
-        if hasattr(layer, 'self_attn') and isinstance(layer.self_attn, LlamaAttentionWrapper):
-            # The TSV is stored in the internal tsv_layer module of the AttentionWrapper
-            trained_tsv = layer.self_attn.tsv_layer.tsv
+        if hasattr(layer, 'self_attn'):
+             # Check if it's our custom wrapper
+             if hasattr(layer.self_attn, 'tsv_layer') and hasattr(layer.self_attn.tsv_layer, 'tsv'):
+                 trained_tsv = layer.self_attn.tsv_layer.tsv
+             # Fallback check if it was Sequential (old implementation)
+             elif isinstance(layer.self_attn, nn.Sequential) and len(layer.self_attn) > 1:
+                 trained_tsv = layer.self_attn[1].tsv
+             else:
+                 print(f"[Warning] Attention wrapper/sequential not found. Type: {type(layer.self_attn)}")
         else:
-            print(f"[Warning] AttentionWrapper not found for layer {args.str_layer}. TSV not retrieved.")
+            print(f"[Warning] self_attn module not found for layer {args.str_layer}.")
 
     # 3. Final saving step
     if trained_tsv is not None:
         # Check if the TSV is actually non-zero (i.e., was trained)
-        if trained_tsv.norm().item() > 1e-6:
+        norm = trained_tsv.norm().item()
+        if norm > 0: # Save even if small, 1e-6 check might skip valid small updates
             tsv_vector = trained_tsv.detach().cpu().float().numpy()
-            np.save(os.path.join(save_dir,
-                                f"tsv_layer_{args.str_layer}.npy"), tsv_vector)
-            print(f"[Saved] TSV vector for layer {args.str_layer} saved to {save_dir}")
+            np.save(os.path.join(save_dir, f"tsv_layer_{args.str_layer}.npy"), tsv_vector)
+            print(f"[Saved] TSV vector for layer {args.str_layer} saved to {save_dir} (Norm: {norm:.4f})")
         else:
-             print(f"[Info] TSV vector for layer {args.str_layer} is near zero, skipping save.")
+             print(f"[Info] TSV vector for layer {args.str_layer} is exactly zero. Was it trained?")
     else:
-        print("[Warning] TSV not successfully retrieved from model structure. Nothing saved.")
+        print("[Error] TSV not successfully retrieved from model structure. Nothing saved.")
 
 def train_model(model, optimizer, device, prompts, labels, args):
     
@@ -453,7 +474,6 @@ def main():
             return batch
 
         dataset = dataset.map(remove_dups, batch_size=1, batched=True, load_from_cache_file=False)
-        
         
     elif args.dataset_name == 'sciq':
         dataset = load_dataset("allenai/sciq", split="validation")

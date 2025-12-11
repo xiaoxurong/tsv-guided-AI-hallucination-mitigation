@@ -104,6 +104,13 @@ class QwenDecoderLayerWrapper(nn.Module):
         self.original_layer = original_layer
         self.tsv_layer = tsv_layer
 
+    # ---- Attribute forwarding (CRITICAL FIX) ----
+    def __getattr__(self, name):
+        if name in ["original_layer", "tsv_layer"]:
+            return super().__getattr__(name)
+        return getattr(self.original_layer, name)
+
+    # ---- Forward pass with TSV shift ----
     def forward(self, hidden_states, **kwargs):
         x = self.original_layer(hidden_states, **kwargs)
         tsv = self.tsv_layer.tsv.to(x.device).repeat(1, x.shape[1], 1)
