@@ -451,7 +451,7 @@ def main():
     if args.gene:
 
         tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, token = '')
-        model = AutoModelForCausalLM.from_pretrained(model_name_or_path, low_cpu_mem_usage=True, torch_dtype=torch.float16, device_map="auto", token = '')
+        model = AutoModelForCausalLM.from_pretrained(model_name_or_path, low_cpu_mem_usage=True, torch_dtype=torch.float32, device_map="auto", token = '')
         device = torch.device("cuda")
         all_decoded_answers = []
         begin_index = 0
