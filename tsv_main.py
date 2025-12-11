@@ -5,9 +5,9 @@ from datasets import load_dataset
 from tqdm import tqdm
 import numpy as np
 import argparse
-from train_utils import get_last_non_padded_token_rep, compute_ot_loss_cos, update_centroids_ema, update_centroids_ema_hard, get_ex_data, collate_fn
+from train_utils import compute_ot_and_repulsion_loss, get_last_non_padded_token_rep, compute_ot_loss_cos, update_centroids_ema, update_centroids_ema_hard, get_ex_data, collate_fn
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from llm_layers import add_tsv_layers, get_layers, LlamaDecoderLayerWrapper
+from llm_layers import add_tsv_layers, get_layers, LlamaDecoderLayerWrapper, AttentionWrapper
 from sklearn.metrics import roc_auc_score
 from torch.cuda.amp import autocast, GradScaler
 import torch.nn.functional as F
@@ -59,7 +59,7 @@ def save_trained_vectors(model, centroids, dir_name, args):
     # 2. Access the TSV based on the injection component type
     if args.component == 'res':
         # Residual injection: The entire layer is wrapped (Llama/Qwen wrappers)
-        if isinstance(layer, (LlamaDecoderLayerWrapper, QwenDecoderLayerWrapper)): 
+        if isinstance(layer, (LlamaDecoderLayerWrapper)): 
             # The TSV is stored in the internal tsv_layer module of the wrapper
             trained_tsv = layer.tsv_layer.tsv
         else:
@@ -183,10 +183,19 @@ def train_model(model, optimizer, device, prompts, labels, args):
                 last_token_rep = get_last_non_padded_token_rep(last_layer_hidden_state, attention_mask.squeeze())  
                 
                 batch_labels_oh = torch.nn.functional.one_hot(batch_labels, num_classes=-1)
-                
-                ot_loss, similarities = compute_ot_loss_cos(last_token_rep, centroids, batch_labels_oh, args)
-                
-                loss = ot_loss 
+                if args.loss_type == 'repulsion':
+                    # Calls the function that includes: OT_loss + lambda_rep * (mu_T^T * mu_H)^2
+                    loss, similarities = compute_ot_and_repulsion_loss(
+                        last_token_rep, centroids, batch_labels_oh, args
+                    )
+                elif args.loss_type == 'original':
+                    # Calls the function for the original MLE objective (Eq. 5)
+                    loss, similarities = compute_ot_loss_cos(
+                        last_token_rep, centroids, batch_labels_oh, args
+                    )
+                else:
+                    raise ValueError(f"Unknown loss type: {args.loss_type}. Must be 'original' or 'repulsion'.")
+
                 
                 total += batch_labels.size(0)
                 
@@ -286,11 +295,6 @@ def train_model(model, optimizer, device, prompts, labels, args):
 
                 # Use attention mask to ignore padding tokens, and get the last non-padded token's representation
                 last_token_rep = get_last_non_padded_token_rep(last_layer_hidden_state, attention_mask.squeeze())  # Shape: [batch_size, hidden_size]
-
-                
-                ot_loss, similarities = compute_ot_loss_cos(last_token_rep, centroids, batch_labels, args)
-                
-                loss = ot_loss 
 
                 with torch.no_grad():
                     
@@ -400,6 +404,7 @@ def main():
     parser.add_argument('--num_gene', type=int, default=1)
     parser.add_argument('--gene', type=int, default=0) 
     parser.add_argument('--generate_gt', type=int, default=0)
+    parser.add_argument('--loss_type', type=str, default='original', help='original or repulsion')
     parser.add_argument('--dataset_name', type=str, default='tqa')
     parser.add_argument('--device', type=int, default=0)
     parser.add_argument('--wild_ratio', type=float, default=0.75)
@@ -421,6 +426,7 @@ def main():
     parser.add_argument("--optimizer", type=str, default='AdamW')
     parser.add_argument("--num_iters_sk", type=int, default=3)
     parser.add_argument("--epsilon_sk", type=float, default=0.05)
+    parser.add_argument("--repulsion_lambda", type=float, default=20)
     
     args = parser.parse_args()
         
