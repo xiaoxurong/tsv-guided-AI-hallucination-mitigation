@@ -89,6 +89,11 @@ class LlamaDecoderLayerWrapper(nn.Module):
         self.decoder_layer = decoder_layer
         self.tsv_layer = tsv_layer
         self.model_name = model_name
+        if hasattr(decoder_layer, "attention_type"):
+            self.attention_type = decoder_layer.attention_type
+        else:
+            # LLaMA may not use this, but it must exist
+            self.attention_type = None
 
     def forward(
         self,
@@ -116,11 +121,11 @@ class LlamaDecoderLayerWrapper(nn.Module):
             attn_out = self.decoder_layer.self_attn(
                 hidden_states=hidden_states,
                 attention_mask=attention_mask,
-                position_ids=position_ids,
-                past_key_value=past_key_value,
+                position_ids=position_ids
                 output_attentions=output_attentions,
                 use_cache=use_cache,
                 cache_position=cache_position,
+                position_embeddings=position_embeddings
             )
 
             # Qwen2 returns (hidden_states, attn_weights?) — no present_kv
@@ -306,23 +311,24 @@ def add_tsv_layers(model: PreTrainedModel, tsv: Tensor, alpha: list, args):
     layers = get_layers(model)
     mlp_keywords = ["mlp", "feedforward", "ffn"]
     attn_keywords = ["self_attn"]
+    hidden_size = model.config.hidden_size
     
     assert len(tsv) == len(layers)
     if args.component == 'mlp':
         for i, layer in enumerate(layers):
             if i == args.str_layer:
                 original_mlp = find_module(layer, mlp_keywords)
-                layer.mlp = nn.Sequential(original_mlp, TSVLayer(tsv[i], alpha)) 
+                layer.mlp = nn.Sequential(original_mlp, TSVLayer(tsv[i], alpha, hidden_size)) 
 
     elif args.component == 'attn':
         for i, layer in enumerate(layers):
             if i == args.str_layer:
                 original_attn = find_module(layer, attn_keywords)
-                layer.self_attn = nn.Sequential(original_attn, TSVLayer(tsv[i], alpha)) 
+                layer.self_attn = nn.Sequential(original_attn, TSVLayer(tsv[i], alpha, hidden_size)) 
                 
     elif args.component == 'res':
         
         for i, layer in enumerate(layers):
             if i == args.str_layer:
                 decoder_layer = layers[i]
-                layers[i] = LlamaDecoderLayerWrapper(decoder_layer, TSVLayer(tsv[i], alpha), args.model_name)
+                layers[i] = LlamaDecoderLayerWrapper(decoder_layer, TSVLayer(tsv[i], alpha, hidden_size), args.model_name)
