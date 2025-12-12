@@ -30,7 +30,7 @@ from huggingface_hub import notebook_login
 #ARGUMENTS, MODEL/JUDGE CHOICES:
 
 # --- CONFIGURATION (Edit these defaults directly) ---
-DEFAULT_MODEL_NAME = "qwen-7B"
+DEFAULT_MODEL_NAME = "qwen-7B-instruct"
 # DEFAULT_MODEL_NAME = "llama_7B" #we can change this back, just for testing.
 DEFAULT_TSV_PATH = "tsv_vectors_layer_9.pt"
 DEFAULT_LAYER_ID = 9
@@ -71,7 +71,8 @@ HF_NAMES = {
     'local_llama3_8B_instruct': 'results_dump/edited_models_dump/llama3_8B_instruct_seed_42_top_48_heads_alpha_15',
     'local_llama3_70B_instruct': 'results_dump/edited_models_dump/llama3_70B_instruct_seed_42_top_48_heads_alpha_15',
 
-    'qwen-7B': 'Qwen/Qwen2.5-7B'
+    'qwen-7B': 'Qwen/Qwen2.5-7B',
+    'qwen-7B-instruct': 'Qwen/Qwen2.5-7B-Instruct',
 }
 
 def parse_args():
@@ -122,13 +123,14 @@ def main():
     default_model = AutoModelForCausalLM.from_pretrained(model_name_or_path, torch_dtype=torch.float16, trust_remote_code=True, token=hf_token, device_map={"": 0})
     # default_model.to("cuda")
     if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token = tokenizer.eos_token
     default_model.generation_config.pad_token_id = tokenizer.pad_token_id
 
 
 
     print("model.device =", default_model.device)
     print("hf_device_map present?", hasattr(default_model, "hf_device_map"))
+    print("model: ", args.model_name)
     if hasattr(default_model, "hf_device_map"):
         # how many modules on each device?
         from collections import Counter
@@ -141,7 +143,7 @@ def main():
         df = df.sample(frac=1).reset_index(drop=True)
         df = df[:100]
     #Load in TSV and Centroids
-    if args.model_name == "qwen-7B":
+    if args.model_name == "qwen-7B" or args.model_name == "qwen-7B-instruct":
         tsv = np.load(f"./tsv_info/qwen/layer_{args.layer_id}/tsv_layer_{args.layer_id}.npy")
         centroid_true = np.load(f"./tsv_info/qwen/layer_{args.layer_id}/centroid_true.npy")
         centroid_hallu = np.load(f"./tsv_info/qwen/layer_{args.layer_id}/centroid_hallu.npy")
