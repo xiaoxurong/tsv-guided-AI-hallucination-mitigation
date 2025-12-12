@@ -200,7 +200,6 @@ def tqa_run_answers(frame, engine, tag, preset, model=None, tokenizer=None, verb
   with torch.no_grad():
       for idx, (input_ids, attention_mask) in enumerate(tqdm(tokens, desc="tqa_run_answers")):
           max_len = input_ids.shape[-1] + 50
-          print("max_len =", max_len)
 
           # --- intervention code --- #
 
@@ -276,7 +275,7 @@ def run_ce_loss(model_key, model=None, tokenizer=None, device='cuda', interventi
 
 def run_kl_wrt_orig(model_key, model=None, tokenizer=None, device='cuda', interventions={}, intervention_fn=None, num_samples=100, separate_kl_device=None, orig_model=None): 
 
-    assert 'llama' in model_key or 'alpaca' in model_key or 'vicuna' in model_key, 'model must be llama model'
+    assert 'qwen' in model_key or 'llama' in model_key or 'alpaca' in model_key or 'vicuna' in model_key, 'model must be llama model'
 
     # load owt text
     # note this is tokenized with llama tokenizer
