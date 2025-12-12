@@ -68,7 +68,7 @@ HF_NAMES = {
     'local_llama3_8B_instruct': 'results_dump/edited_models_dump/llama3_8B_instruct_seed_42_top_48_heads_alpha_15',
     'local_llama3_70B_instruct': 'results_dump/edited_models_dump/llama3_70B_instruct_seed_42_top_48_heads_alpha_15',
 
-    'qwen-7B': 'Qwen/Qwen2-7B-Instruct'
+    'qwen-7B': 'Qwen/Qwen2.5-7B-Instruct'
 }
 
 def parse_args():
