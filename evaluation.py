@@ -33,7 +33,7 @@ ENGINE_MAP = {
     'llama3_8B_instruct': 'meta-llama/Meta-Llama-3-8B-Instruct',
     'llama3_70B': 'meta-llama/Meta-Llama-3-70B',
     'llama3_70B_instruct': 'meta-llama/Meta-Llama-3-70B-Instruct',
-    'qwen-7B': 'Qwen/Qwen2.5-7B'
+    'qwen-7B': 'Qwen/Qwen2-7B-Instruct'
 }
 
 
@@ -462,5 +462,4 @@ def tqa_run_probs(frame, engine, tag, preset, model=None, tokenizer=None, verbos
         torch.cuda.empty_cache()
 
     return frame
-
 

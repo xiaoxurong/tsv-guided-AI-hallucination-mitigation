@@ -66,4 +66,3 @@ class TSVMitigator:
         if self.hook_handle:
             self.hook_handle.remove()
             self.hook_handle = None
-
