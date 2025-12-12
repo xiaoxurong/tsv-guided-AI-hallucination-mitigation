@@ -30,15 +30,15 @@ from huggingface_hub import notebook_login
 #ARGUMENTS, MODEL/JUDGE CHOICES:
 
 # --- CONFIGURATION (Edit these defaults directly) ---
-DEFAULT_MODEL_NAME = "llama3_8B_instruct"
+DEFAULT_MODEL_NAME = "qwen-7B"
 # DEFAULT_MODEL_NAME = "llama_7B" #we can change this back, just for testing.
 DEFAULT_TSV_PATH = "tsv_vectors_layer_9.pt"
 DEFAULT_LAYER_ID = 9
 DEFAULT_DEVICE = 0
 #"mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu"),  
 DEFAULT_MITIGATION_METHOD = 'projection' # Options: 'projection', 'interpolation', 'adaptive'
-DEFAULT_ALPHA = 0.1 # Strength for projection/adaptive
-DEFAULT_BETA = 0.2  # Strength for interpolation
+DEFAULT_ALPHA = 0.7 # Strength for projection/adaptive
+DEFAULT_BETA = 0.4  # Strength for interpolation
 
 
 HF_NAMES = {
@@ -54,6 +54,7 @@ HF_NAMES = {
     'llama3_8B_instruct': 'meta-llama/Meta-Llama-3-8B-Instruct',
     'llama3_70B': 'meta-llama/Meta-Llama-3-70B',
     'llama3_70B_instruct': 'meta-llama/Meta-Llama-3-70B-Instruct',
+    'Qwen2.5B': 'Qwen/Qwen-2.5B',
 
     # HF edited models (ITI baked-in)
     'honest_llama_7B': 'jujipotle/honest_llama_7B', # Heads=48, alpha=15
@@ -68,7 +69,9 @@ HF_NAMES = {
     'local_llama2_chat_13B': 'results_dump/edited_models_dump/llama2_chat_13B_seed_42_top_48_heads_alpha_15',
     'local_llama2_chat_70B': 'results_dump/edited_models_dump/llama2_chat_70B_seed_42_top_48_heads_alpha_15',
     'local_llama3_8B_instruct': 'results_dump/edited_models_dump/llama3_8B_instruct_seed_42_top_48_heads_alpha_15',
-    'local_llama3_70B_instruct': 'results_dump/edited_models_dump/llama3_70B_instruct_seed_42_top_48_heads_alpha_15'
+    'local_llama3_70B_instruct': 'results_dump/edited_models_dump/llama3_70B_instruct_seed_42_top_48_heads_alpha_15',
+
+    'qwen-7B': 'Qwen/Qwen2.5-7B'
 }
 
 def parse_args():
@@ -138,9 +141,14 @@ def main():
         df = df.sample(frac=1).reset_index(drop=True)
         df = df[:100]
     #Load in TSV and Centroids
-    tsv = np.load(f"./tsv_info/layer_{args.layer_id}/tsv_layer_{args.layer_id}.npy")
-    centroid_true = np.load(f"./tsv_info/layer_{args.layer_id}/centroid_true.npy")
-    centroid_hallu = np.load(f"./tsv_info/layer_{args.layer_id}/centroid_hallu.npy")
+    if args.model_name == "qwen-7B":
+        tsv = np.load(f"./tsv_info/qwen/layer_{args.layer_id}/tsv_layer_{args.layer_id}.npy")
+        centroid_true = np.load(f"./tsv_info/qwen/layer_{args.layer_id}/centroid_true.npy")
+        centroid_hallu = np.load(f"./tsv_info/qwen/layer_{args.layer_id}/centroid_hallu.npy")
+    else: 
+        tsv = np.load(f"./tsv_info/layer_{args.layer_id}/tsv_layer_{args.layer_id}.npy")
+        centroid_true = np.load(f"./tsv_info/layer_{args.layer_id}/centroid_true.npy")
+        centroid_hallu = np.load(f"./tsv_info/layer_{args.layer_id}/centroid_hallu.npy")
     # layer_9_info = torch.load("./tsv_info/layer_31/tsv_vectors_layer_9.pt")
     tsv_data = {"direction": torch.tensor(tsv, dtype=torch.float32), "mu_T": torch.tensor(centroid_true, dtype=torch.float32), "mu_H": torch.tensor(centroid_hallu, dtype=torch.float32)}
     # tsv_data = layer_9_info
@@ -161,8 +169,8 @@ def main():
         input_path=f'results/truthful_df.csv',
         # output_path=f'results/{args.mode}/answer_dump_{filename}_{args.mode}.csv',
         # summary_path=f'results/{args.mode}/summary_dump_{filename}_{args.mode}_{args.num_samples}_{args.alpha}_{args.layer_id}.csv',
-        output_path=f'results/{args.mode}/answer_dump_{filename}_{args.mode}_{args.layer_id}_full{args.full}_alpha{args.alpha}_beta{args.beta}.csv',
-        summary_path=f'results/{args.mode}/summary_dump_{filename}_{args.mode}{args.layer_id}_full{args.full}_alpha{args.alpha}_beta{args.beta}.csv',
+        output_path=f'results/{args.model_name}/{args.mode}/answer_dump_{filename}_{args.mode}_{args.layer_id}_full{args.full}_alpha{args.alpha}_beta{args.beta}.csv',
+        summary_path=f'results/{args.model_name}/{args.mode}/summary_dump_{filename}_{args.mode}{args.layer_id}_full{args.full}_alpha{args.alpha}_beta{args.beta}.csv',
         device="cuda", 
         interventions=None, 
         intervention_fn=None, 
