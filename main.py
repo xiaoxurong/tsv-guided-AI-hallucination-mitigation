@@ -94,13 +94,14 @@ def parse_args():
   parser.add_argument('--instruction_prompt', default='default', help='instruction prompt for truthfulqa benchmarking, "default" or "informative"', type=str, required=False)
 
   return parser.parse_args()
-
+#
+#
 def main(): 
 
     args = parse_args()
     print("arguments:")
     print(args.model_name)
-    print(args.mode)
+    print(args.mode) 
     print(args.layer_id)
 
     hf_token = ""
@@ -149,18 +150,18 @@ def main():
     print("Device:?")
     print(default_model.device)
 
-    mitigated_model = Mitigation_Wrapper(default_model, args.layer_id, tsv_data, default_model.device, args.alpha, args.beta, args.mode)
+    #### mitigated_model = Mitigation_Wrapper(default_model, args.layer_id, tsv_data, default_model.device, args.alpha, args.beta, args.mode)
             
     filename = f'{args.model_prefix}{args.model_name}_results'                                
     df.to_csv(f"results/truthful_df.csv", index=False)
 
     print("Mitigated Model")
     results = alt_tqa_evaluate(
-        models={args.model_name: mitigated_model},
+        models={args.model_name: default_model},
         metric_names=['judge', 'info', 'mc', 'bleu'],
         input_path=f'results/truthful_df.csv',
-        output_path=f'results/{args.mode}/answer_dump_{filename}_{args.mode}_{args.layer_id}_full{args.full}_alpha{args.alpha}_beta{args.beta}.csv',
-        summary_path=f'results/{args.mode}/summary_dump_{filename}_{args.mode}{args.layer_id}_full{args.full}_alpha{args.alpha}_beta{args.beta}.csv',
+        output_path=f'results/default/default_qwen_answer_dump_{filename}_full{args.full}.csv',
+        summary_path=f'results/default/default_qwen_summary_dump_{filename}_full{args.full}.csv',
         device="cuda", 
         interventions=None, 
         intervention_fn=None, 
