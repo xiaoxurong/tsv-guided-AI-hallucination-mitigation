@@ -28,7 +28,7 @@ from huggingface_hub import notebook_login
 #ARGUMENTS, MODEL/JUDGE CHOICES:
 
 # --- CONFIGURATION (Edit these defaults directly) ---
-DEFAULT_MODEL_NAME = "qwen-7B"
+DEFAULT_MODEL_NAME = "llama3_8B_instruct"
 # DEFAULT_MODEL_NAME = "llama_7B" #we can change this back, just for testing.
 DEFAULT_TSV_PATH = "tsv_vectors_layer_9.pt"
 DEFAULT_LAYER_ID = 9
@@ -66,9 +66,7 @@ HF_NAMES = {
     'local_llama2_chat_13B': 'results_dump/edited_models_dump/llama2_chat_13B_seed_42_top_48_heads_alpha_15',
     'local_llama2_chat_70B': 'results_dump/edited_models_dump/llama2_chat_70B_seed_42_top_48_heads_alpha_15',
     'local_llama3_8B_instruct': 'results_dump/edited_models_dump/llama3_8B_instruct_seed_42_top_48_heads_alpha_15',
-    'local_llama3_70B_instruct': 'results_dump/edited_models_dump/llama3_70B_instruct_seed_42_top_48_heads_alpha_15',
-
-    'qwen-7B': 'Qwen/Qwen2.5-7B-Instruct'
+    'local_llama3_70B_instruct': 'results_dump/edited_models_dump/llama3_70B_instruct_seed_42_top_48_heads_alpha_15'
 }
 
 def parse_args():
@@ -94,14 +92,12 @@ def parse_args():
   parser.add_argument('--instruction_prompt', default='default', help='instruction prompt for truthfulqa benchmarking, "default" or "informative"', type=str, required=False)
 
   return parser.parse_args()
-#
-#
+
 def main(): 
 
     args = parse_args()
     print("arguments:")
-    print(args.model_name)
-    print(args.mode) 
+    print(args.mode)
     print(args.layer_id)
 
     hf_token = ""
@@ -139,29 +135,30 @@ def main():
         df = df.sample(frac=1).reset_index(drop=True)
         df = df[:100]
     #Load in TSV and Centroids
-    tsv = np.load(f"./tsv_info/qwen/layer_{args.layer_id}/tsv_layer_{args.layer_id}.npy")
-    centroid_true = np.load(f"./tsv_info/qwen/layer_{args.layer_id}/centroid_true.npy")
-    centroid_hallu = np.load(f"./tsv_info/qwen/layer_{args.layer_id}/centroid_hallu.npy")
-    # # layer_9_info = torch.load("./tsv_info/layer_31/tsv_vectors_layer_9.pt")
-    tsv_data = {"direction": torch.tensor(tsv, dtype=torch.float32), "mu_T": torch.tensor(centroid_true, dtype=torch.float32), "mu_H": torch.tensor(centroid_hallu, dtype=torch.float32)}
+    # tsv = np.load(f"./tsv_info/layer_{args.layer_id}/tsv_layer_{args.layer_id}.npy")
+    # centroid_true = np.load(f"./tsv_info/layer_{args.layer_id}/centroid_true.npy")
+    # centroid_hallu = np.load(f"./tsv_info/layer_{args.layer_id}/centroid_hallu.npy")
+    # # # layer_9_info = torch.load("./tsv_info/layer_31/tsv_vectors_layer_9.pt")
+    # tsv_data = {"direction": torch.tensor(tsv, dtype=torch.float32), "mu_T": torch.tensor(centroid_true, dtype=torch.float32), "mu_H": torch.tensor(centroid_hallu, dtype=torch.float32)}
     # tsv_data = layer_9_info
     #Directly attaching the hook
 
-    print("Device:?")
-    print(default_model.device)
+    # print("Device:?")
+    # print(default_model.device)
 
-    #### mitigated_model = Mitigation_Wrapper(default_model, args.layer_id, tsv_data, default_model.device, args.alpha, args.beta, args.mode)
+    # mitigated_model = Mitigation_Wrapper(default_model, args.layer_id, tsv_data, default_model.device, args.alpha, args.beta, args.mode)
             
     filename = f'{args.model_prefix}{args.model_name}_results'                                
     df.to_csv(f"results/truthful_df.csv", index=False)
 
+###
     print("Mitigated Model")
     results = alt_tqa_evaluate(
         models={args.model_name: default_model},
         metric_names=['judge', 'info', 'mc', 'bleu'],
         input_path=f'results/truthful_df.csv',
-        output_path=f'results/default/default_qwen_answer_dump_{filename}_full{args.full}.csv',
-        summary_path=f'results/default/default_qwen_summary_dump_{filename}_full{args.full}.csv',
+        output_path=f'results/default/llama_new_answer_dump_{filename}_full{args.full}.csv',
+        summary_path=f'results/default/llama_new_summary_dump_{filename}_full{args.full}.csv',
         device="cuda", 
         interventions=None, 
         intervention_fn=None, 
