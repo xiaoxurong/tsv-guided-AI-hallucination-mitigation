@@ -1,0 +1,35 @@
+0. Navigate to tsv-guided-AI-hallucination-mitigation folder.
+1. Put Huggingface token in token.txt without quotes
+2. Put ChatGPT token in open_ai_key.txt without quotes 
+3. Run the following series of commands:
+
+pip install t5
+pip install git+https://github.com/meta-llama/llama
+pip install git+https://github.com/davidbau/baukit
+pip install transformers -U
+pip install pyvene
+pip install evaluate
+cd TruthfulQA
+pip install -r requirements.txt
+pip install -e .
+cd ..
+pip install datasets==2.19
+pip install "numpy<2.0.0"
+pip install huggingface_hub
+pip install git+https://github.com/google-research/bleurt.git
+
+4. Run mitigation using: !python main.py --layer_id=(put layer id number here) --mode="(put mode here)"
+
+5. You can change the dataset in two ways:
+  
+  First, make a folder under tsv_info for the layer you're modifying in the form layer_#
+  Then load the dataset through:
+
+  a.) Using .npy files
+  tsv = np.load("./tsv_info/layer_#/example_layer_data.npy")
+  centroid_true = np.load("./tsv_info/layer_#/example_true_centroid.npy")
+  centroid_hallu = np.load("./tsv_info/layer_#/example_hallucinated_centroid.npy")
+  tsv_data = {"direction": torch.tensor(tsv, dtype=torch.float32), "mu_T": torch.tensor(centroid_true, dtype=torch.float32), "mu_H": torch.tensor(centroid_hallu, dtype=torch.float32)}
+
+  b.) Directly using .pt file 
+  tsv_data = torch.load("./tsv_info/layer_#/example_data.pt")
