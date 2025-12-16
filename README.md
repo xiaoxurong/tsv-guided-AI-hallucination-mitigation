@@ -1,9 +1,8 @@
 # TSV Guided Hallucination Detection with ITI Approach
 
-This project is an extension based on 1) the ICML 2025 paper: [Steer LLM Latents for Hallucination Detection](https://arxiv.org/abs/2503.01917) by Seongheon Park, Xuefeng Du, Min-Hsuan Yeh, Haobo Wang, and Yixuan Li, and 2) the NeurIPS 2023 paper: [Inference-Time Intervention:
-Eliciting Truthful Answers from a Language Model] (https://arxiv.org/abs/2306.03341) by Kenneth Li, Oam Patel, Fernanda Viégas, Hanspeter Pfister and Martin Wattenberg.
+# Introduction
+Large Language Models (LLMs) frequently produce hallucinated outputs that limits their reliability in high-stakes applications. Prior work usually treated hallucination detection and mitigation as separate problems. In this work, we bridge a lightweight hallucination detection approach-Truthfulness Separator Vector (TSV). We introduce three TSV-guided inference-time mitigation strategies—prototype-aware projection, prototype interpolation, and adaptive mitigation—that intervene on model hidden states during inference without modifying model parameters. Experiments show that TSV-guided interventions can consistently improve truthfulness metrics over the default baseline while incurring minimal distributional shift, as measured by KL divergence. Overall, our results highlight the potential of combining latent-space hallucination detection with lightweight inference-time intervention as an effective approach to hallucination mitigation in LLMs.
 
-The majority of the detection code was adapted from the TSV source code of the TSV paper mentioned above. See the source code here: (https://github.com/deeplearning-wisc/tsv.git). The mitigation implementation was based on the ITI source code: (https://github.com/likenneth/honest_llama).
 
 ---
 
@@ -316,3 +315,8 @@ tsv_data = torch.load("./tsv_info/layer_<LAYER_ID>/tsv_data.pt")
 ## Acknowledgement
 
 We gratefully acknowledge [TSV](https://arxiv.org/abs/2503.01917), [ITI](https://arxiv.org/abs/2306.03341), and [ICV](https://arxiv.org/abs/2311.06668) for their inspiring ideas and open-source contributions.
+
+This project is an extension based on 1) the ICML 2025 paper: [Steer LLM Latents for Hallucination Detection](https://arxiv.org/abs/2503.01917) by Seongheon Park, Xuefeng Du, Min-Hsuan Yeh, Haobo Wang, and Yixuan Li, and 2) the NeurIPS 2023 paper: [Inference-Time Intervention:
+Eliciting Truthful Answers from a Language Model] (https://arxiv.org/abs/2306.03341) by Kenneth Li, Oam Patel, Fernanda Viégas, Hanspeter Pfister and Martin Wattenberg.
+
+The majority of the detection code was adapted from the TSV source code of the TSV paper mentioned above. See the source code here: (https://github.com/deeplearning-wisc/tsv.git). The mitigation implementation was based on the ITI source code: (https://github.com/likenneth/honest_llama).
